@@ -1,14 +1,23 @@
 # PL
 
 IL: Incremental Learning
+
 ML: Metric Learning
+
 OOD: Out-Of-Distribution
+
 FSL: Few-Show Learning
+
 AT: Adversarial Training
 
+
 DCE: https://arxiv.org/pdf/1805.03438.pdf 
+
 TLA/NLA: https://papers.nips.cc/paper/2019/file/c24cd76e1ce41366a4bbe8a49b02a028-Paper.pdf with Triplet/N-pair Loss
+
 iCaRL: https://arxiv.org/pdf/1611.07725.pdf 
 
+
 Trainer: Standard training with AT/OOD/FSL
+
 Trainer_IL: Incremental training with AT/OOD/FSL
