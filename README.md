@@ -1,6 +1,6 @@
 # PL
 
-## Supported Paradigms
+## Paradigms
 
 **PL**: Prototype Learning
 
