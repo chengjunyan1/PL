@@ -8,6 +8,7 @@ import numpy as np
 from PIL import Image
 
 from IL.resnet import resnet18
+from pytorch_metric_learning import distances
 
 
 def save_checkpoint(state, filename): torch.save(state, filename)
@@ -363,10 +364,10 @@ class MLNet(ILBase):
             }, filename=os.path.join(save_dir, args.name+'_checkpoint.th'))
             print('* Epoch Checkpoint saved. *')
 
-
     def loss(self,pred,embeds,y,a=0.3,b=1e-4): 
         if self.n_classes==1: return self.criterion(pred, y)
         return self.criterion(pred, y)+self.mlloss(embeds,y,a,b)
+
 
 class PLNet(ILBase):
     def __init__(self, feature_size, n_classes, learning_rate, distance):
@@ -374,6 +375,7 @@ class PLNet(ILBase):
         self.bn = nn.BatchNorm1d(feature_size, momentum=0.01)
         self.embeds=nn.Parameter(torch.randn(10,feature_size),requires_grad=True)
         self.distance=distance
+        self.L2dist=distances.LpDistance(power=2)
         self.apply(_weights_init)
         self.optimizer = optim.Adam(self.parameters(), lr=learning_rate,
                                     weight_decay=0.00001)
@@ -384,8 +386,9 @@ class PLNet(ILBase):
         x = self.feature_extractor(x)
         x = self.bn(x)
         distance=self.distance(x, self.embeds)
-        if embed: return distance[:,:self.n_classes],x
-        return distance[:,:self.n_classes]
+        pred=-self.L2dist(x, self.embeds)
+        if embed: return pred[:,:self.n_classes],distance[:,:self.n_classes],x
+        return pred[:,:self.n_classes]
 
     def classify(self, x, transform=None): return self(x).max(1)[1]
 
@@ -419,8 +422,8 @@ class PLNet(ILBase):
                     images_adv = attack(images, labels)
                     images = torch.cat((images, images_adv), dim=0)
                     labels=torch.cat((labels, labels), dim=0)
-                output, _= self.forward(images,True)
-                loss=self.loss(output,labels)
+                _, distance, x= self.forward(images,True)
+                loss=self.loss(x,distance,labels)
 
                 loss.backward()
                 optimizer.step()
@@ -441,8 +444,9 @@ class PLNet(ILBase):
             }, filename=os.path.join(save_dir, args.name+'_checkpoint.th'))
             print('* Epoch Checkpoint saved. *')
 
-
-    def loss(self,distance,y): return pl_loss(y,distance,self.n_classes)
+    def loss(self,x,distance,y): 
+        l2norm=torch.sum(self.L2dist(x,self.embeds)[:,:self.n_classes],1)
+        return pl_loss(l2norm,y,distance,self.n_classes)
 
 
 
@@ -472,10 +476,9 @@ def regularization(features, centers, labels):
     distance=(torch.sum(distance, 0, keepdim=True))/features.shape[0]
     return distance
 
-def pl_loss(y,distance,N_class=10):
+def pl_loss(l2norm,y,distance,N_class=10):
     targets=torch.nn.functional.one_hot(y,num_classes=N_class)
-    loss=npair_loss(targets,distance,N_class) # npair minimize dist from sample to its proto, maximize dist to other protos
-    loss+=0.1*torch.sum(distance*targets,-1) # do not understand it
+    loss=npair_loss(targets,distance,N_class)+0.1*l2norm
     return torch.mean(loss)
 
 def gather_nd(x,y,w):

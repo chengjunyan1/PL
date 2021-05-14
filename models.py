@@ -128,7 +128,7 @@ class ResNet20PL(nn.Module):
     def forward(self, x, embed=False):
         x=self.conv(x)
         distance=self.distance(x, self.embeds)
-        pred=self.L2dist(x, self.embeds)
+        pred=-self.L2dist(x, self.embeds)
         if embed: return pred,distance,x
         return pred
     def loss(self,x,distance,y): 
@@ -239,7 +239,7 @@ class Conv6PL(nn.Module):
     def forward(self, x, embed=False):
         x=self.conv(x)
         distance=self.distance(x, self.embeds)
-        pred=self.L2dist(x, self.embeds)
+        pred=-self.L2dist(x, self.embeds)
         if embed: return pred,distance,x
         return pred
     def loss(self,x,distance,y): 
