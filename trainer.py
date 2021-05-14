@@ -184,8 +184,8 @@ def train(args, train_loader, model, optimizer, epoch, attack=None):
             output, embeds= model(input_var,True)
             loss=model.loss(output,embeds,target_var)
         elif args.loss=='PL':
-            output, _= model(input_var,True)
-            loss=model.loss(output,target_var)
+            output, distance, x= model(input_var,True)
+            loss=model.loss(x,distance,target_var)
         else:
             output,_ = model(input_var,True)
             loss = model.loss(output, target_var)
@@ -356,7 +356,7 @@ if __name__ == '__main__':
     args.dist='dotproduct'
     args.resume=False
     args.evaluate=False
-    args.dataset='cifar'
+    args.dataset='mnist'
     args.epochs=10
     args.batch_size=256
     args.lr=1e-2

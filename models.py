@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import torch.nn.init as init
 
 from torch.autograd import Variable
+from pytorch_metric_learning import distances
 
 
 """ CIFAR """
@@ -122,13 +123,18 @@ class ResNet20PL(nn.Module):
         self.resnet=ResNet()
         self.embeds=nn.Parameter(torch.randn(10,64),requires_grad=True)
         self.distance=distance
+        self.L2dist=distances.LpDistance(power=2)
         self.apply(_weights_init)
     def forward(self, x, embed=False):
-        x=self.resnet(x)
+        x=self.conv(x)
         distance=self.distance(x, self.embeds)
-        if embed: return distance,x
-        return distance
-    def loss(self,distance,y): return pl_loss(y,distance)
+        pred=self.L2dist(x, self.embeds)
+        if embed: return pred,distance,x
+        return pred
+    def loss(self,x,distance,y): 
+        l2norm=self.L2dist(x,self.embeds)
+        l2norm=torch.sum(l2norm,1)
+        return pl_loss(l2norm,y,distance)
 
 
 """ MNIST """
@@ -228,13 +234,18 @@ class Conv6PL(nn.Module):
         self.conv=ConvNet()
         self.embeds=nn.Parameter(torch.randn(10,64),requires_grad=True)
         self.distance=distance
+        self.L2dist=distances.LpDistance(power=2)
         self.apply(_weights_init)
     def forward(self, x, embed=False):
         x=self.conv(x)
         distance=self.distance(x, self.embeds)
-        if embed: return distance,x
-        return distance
-    def loss(self,distance,y): return pl_loss(y,distance)
+        pred=self.L2dist(x, self.embeds)
+        if embed: return pred,distance,x
+        return pred
+    def loss(self,x,distance,y): 
+        l2norm=self.L2dist(x,self.embeds)
+        l2norm=torch.sum(l2norm,1)
+        return pl_loss(l2norm,y,distance)
 
 
 
@@ -264,10 +275,10 @@ def regularization(features, centers, labels):
     distance=(torch.sum(distance, 0, keepdim=True))/features.shape[0]
     return distance
 
-def pl_loss(y,distance,N_class=10):
+def pl_loss(l2norm,y,distance,N_class=10):
     targets=torch.nn.functional.one_hot(y,num_classes=N_class)
     loss=npair_loss(targets,distance,N_class) # npair minimize dist from sample to its proto, maximize dist to other protos
-    loss+=0.1*torch.sum(distance*targets,-1) # do not understand it
+    loss+=0.1*l2norm
     return torch.mean(loss)
 
 def gather_nd(x,y,w):
