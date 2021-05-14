@@ -18,11 +18,15 @@ And combination of them
 
 ## Baselines
 
-DCE: https://arxiv.org/pdf/1805.03438.pdf 
+DCE: https://arxiv.org/pdf/1805.03438.pdf for PL
 
-TLA/NLA: https://papers.nips.cc/paper/2019/file/c24cd76e1ce41366a4bbe8a49b02a028-Paper.pdf with Triplet/N-pair Loss
+ODIN: https://arxiv.org/abs/1706.02690 for OOD
 
-iCaRL: https://arxiv.org/pdf/1611.07725.pdf 
+TLA/NLA: https://papers.nips.cc/paper/2019/file/c24cd76e1ce41366a4bbe8a49b02a028-Paper.pdf with Triplet/N-pair Loss for ML&AT
+
+iCaRL: https://arxiv.org/pdf/1611.07725.pdf for IL
+
+all most typical/classic methods for each paradigm
 
 
 ## Trainers
