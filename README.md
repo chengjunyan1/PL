@@ -14,6 +14,7 @@ FSL: Few-Show Learning
 
 AT: Adversarial Training
 
+And combination of them
 
 ## Baselines
 
