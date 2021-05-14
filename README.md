@@ -1,5 +1,9 @@
 # PL
 
+## Supported Paradigms
+
+PL: Prototype Learning
+
 IL: Incremental Learning
 
 ML: Metric Learning
@@ -11,12 +15,16 @@ FSL: Few-Show Learning
 AT: Adversarial Training
 
 
+## Baselines
+
 DCE: https://arxiv.org/pdf/1805.03438.pdf 
 
 TLA/NLA: https://papers.nips.cc/paper/2019/file/c24cd76e1ce41366a4bbe8a49b02a028-Paper.pdf with Triplet/N-pair Loss
 
 iCaRL: https://arxiv.org/pdf/1611.07725.pdf 
 
+
+## Trainers
 
 Trainer: Standard training with AT/OOD/FSL
 
