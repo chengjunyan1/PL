@@ -25,7 +25,7 @@ def model_loader(args,model,eval=False):
     save_dir=os.path.join(args.save_dir, args.group)
     save_dir=os.path.join(save_dir, args.dataset)
     if eval: 
-        resume_path=os.path.join(save_dir, args.name+'_best.th')
+        resume_path=os.path.join(save_dir, args.loss+'_'+args.name+'_best.th')
         if os.path.isfile(resume_path):
             print("=> loading checkpoint '{}'".format(resume_path))
             checkpoint = torch.load(resume_path)
@@ -33,7 +33,7 @@ def model_loader(args,model,eval=False):
         else: print("=> no checkpoint found at '{}'".format(resume_path))
         return model
     else: 
-        resume_path=os.path.join(save_dir, args.name+'_checkpoint.th')
+        resume_path=os.path.join(save_dir, args.loss+'_'+args.name+'_checkpoint.th')
         if os.path.isfile(resume_path):
             print("=> loading checkpoint '{}'".format(resume_path))
             checkpoint = torch.load(resume_path)
@@ -135,13 +135,13 @@ def main(args, model, attack=None):
             'epoch': epoch + 1,
             'state_dict': model.state_dict(),
             'best_prec1': best_prec1,
-        }, is_best, filename=os.path.join(save_dir, args.name+'_checkpoint.th'))
+        }, is_best, filename=os.path.join(save_dir, args.loss+'_'+args.name+'_checkpoint.th'))
 
         if is_best:
             save_checkpoint({
                 'state_dict': model.state_dict(),
                 'best_prec1': best_prec1,
-            }, is_best, filename=os.path.join(save_dir, args.name+'_best.th'))
+            }, is_best, filename=os.path.join(save_dir, args.loss+'_'+args.name+'_best.th'))
     print('Accomplished. Total time:',time.time()-ts)
 
 def train(args, train_loader, model, optimizer, epoch, attack=None):
@@ -295,23 +295,24 @@ def dist_helper(dist):
     if dist=='dotproduct': return distances.DotProductSimilarity()
     
 def model_helper(args,distance=None):
+    assert args.loss in ['DCE','vanilla','PL','TLA','NLA']
     if args.loss=='DCE': print('Using DCE Loss')
     elif args.loss=='PL': print('Using PL Loss')
     elif args.loss=='TLA': print('Using Triplet Loss')
     elif args.loss=='NLA': print('Using N-pair Loss')
-    else: print('Using vanilla model')
+    elif args.loss=='vanilla': print('Using vanilla model')
     if args.dataset=='mnist':
         if args.loss=='DCE': return models.Conv6DCE().cuda()
         elif args.loss=='PL': return models.Conv6PL(dist_helper(args.dist)).cuda()
         elif args.loss=='TLA': return models.Conv6ML(TML()).cuda()
         elif args.loss=='NLA': return models.Conv6ML(NPL()).cuda()
-        else: return models.Conv6().cuda()
+        elif args.loss=='vanilla': return models.Conv6().cuda()
     elif args.dataset=='cifar':
         if args.loss=='DCE': return models.ResNet20DCE().cuda()
         elif args.loss=='PL': return models.ResNet20PL(dist_helper(args.dist)).cuda()
         elif args.loss=='TLA': return models.ResNet20ML(TML()).cuda()
         elif args.loss=='NLA': return models.ResNet20ML(NPL()).cuda()
-        else: return models.ResNet20().cuda()
+        elif args.loss=='vanilla': return models.ResNet20().cuda()
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Prototype learning')
@@ -351,36 +352,49 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     args.name='test'
-    args.group='test'
-    args.loss='PL'
+    args.group='woat'
+    args.loss='vanilla'
     args.dist='dotproduct'
-    args.resume=False
-    args.evaluate=False
     args.dataset='mnist'
     args.epochs=10
     args.batch_size=256
     args.lr=1e-2
     args.ratio=1.0 # For FSL
-    model=model_helper(args)
+    
+    args.resume=False
+    args.evaluate=False
 
+    losses=['vanilla','PL','DCE','TLA','NLA']
+    # losses=['PL']
 
     """ 1. Standard """
-    main(args,model)
+    # for i in losses:
+    #     args.loss=i
+    #     model=model_helper(args)
+    #     main(args,model)
 
 
     """ 2. AT """
-    # args.AT=False # whether use AT 
-    # atk = torchattacks.PGD(model, eps=0.3, alpha=2/255, steps=20)
-    # # atk = torchattacks.FGSM(model, eps=0.3)
-    # main(args,model,atk)
+    args.evaluate=True
+    args.AT=False # whether use AT 
+    for i in losses:
+        print('______________________________')
+        args.loss=i
+        model=model_helper(args)
+        # atk = torchattacks.PGD(model, eps=0.3, alpha=2/255, steps=20)
+        # atk = torchattacks.FGSM(model, eps=0.3)
+        # atk = torchattacks.DeepFool(model, steps=50, overshoot=0.02)
+        atk = torchattacks.AutoAttack(model, norm='Linf', eps=0.3)
+        main(args,model,atk)
     
 
     """ 3. OOD Test on a Trained model (w/wo ODIN) """
+    # model=model_helper(args)
     # dataname='Imagenet'
     # assert dataname in ["Imagenet","Imagenet_resize","LSUN","LSUN_resize",
     #                 "iSUN","Gaussian","Uniform"]
     # model=model_loader(args,model,eval=True)
-    # expname=args.group+'_'+args.name
+    # expname=args.group+'_'+args.loss+'_'+args.name
     # model.eval()
     # testood(expname,model,dataname,args.workers)
 

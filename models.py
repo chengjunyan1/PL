@@ -126,9 +126,10 @@ class ResNet20PL(nn.Module):
         self.L2dist=distances.LpDistance(power=2)
         self.apply(_weights_init)
     def forward(self, x, embed=False):
-        x=self.conv(x)
+        x=self.resnet(x)
         distance=self.distance(x, self.embeds)
-        pred=-self.L2dist(x, self.embeds)
+        # pred=-self.L2dist(x, self.embeds)
+        pred=-distance
         if embed: return pred,distance,x
         return pred
     def loss(self,x,distance,y): 
@@ -239,7 +240,8 @@ class Conv6PL(nn.Module):
     def forward(self, x, embed=False):
         x=self.conv(x)
         distance=self.distance(x, self.embeds)
-        pred=-self.L2dist(x, self.embeds)
+        pred=-distance
+        # pred=-self.L2dist(x, self.embeds)
         if embed: return pred,distance,x
         return pred
     def loss(self,x,distance,y): 
@@ -288,7 +290,7 @@ def gather_nd(x,y,w):
 def npair_loss(y,dist,K=10):
     pos = gather_nd(dist,y,1).reshape(-1,1)
     neg = gather_nd(dist,y,0).reshape(-1,K-1)
-    return torch.log(1+torch.sum(torch.exp(neg-pos),-1))
+    return torch.log(1+torch.sum(torch.exp(pos-neg),-1))
 
 if __name__ == "__main__":
     m=ResNet()
