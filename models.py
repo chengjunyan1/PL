@@ -124,8 +124,7 @@ class ResNet20PL(nn.Module):
         self.pl=PL(distance,64,10)
         self.apply(_weights_init)
     def forward(self, x, embed=False):
-        x=self.resnet(x)
-        pred,distance=self.pl.pred(x)
+        pred,distance=self.pl.pred(self.resnet(x))
         return pred,distance,x if embed else pred
     def loss(self,pred,x,distance,y): 
         return self.pl.loss(pred,x,distance,y)
@@ -229,8 +228,7 @@ class Conv6PL(nn.Module):
         self.pl=PL(distance,64,10)
         self.apply(_weights_init)
     def forward(self, x, embed=False):
-        x=self.conv(x)
-        pred,distance=self.pl.pred(x)
+        pred,distance=self.pl.pred(self.conv(x))
         return pred,distance,x if embed else pred
     def loss(self,pred,x,distance,y): 
         return self.pl.loss(pred,x,distance,y)
