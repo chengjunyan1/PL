@@ -121,21 +121,14 @@ class ResNet20PL(nn.Module):
     def __init__(self,distance):
         super(ResNet20PL, self).__init__()
         self.resnet=ResNet()
-        self.embeds=nn.Parameter(torch.randn(10,64),requires_grad=True)
-        self.distance=distance
-        self.L2dist=distances.LpDistance(power=2)
+        self.pl=PL(distance,64,10)
         self.apply(_weights_init)
     def forward(self, x, embed=False):
         x=self.resnet(x)
-        distance=self.distance(x, self.embeds)
-        # pred=-self.L2dist(x, self.embeds)
-        pred=-distance
-        if embed: return pred,distance,x
-        return pred
-    def loss(self,x,distance,y): 
-        l2norm=self.L2dist(x,self.embeds)
-        l2norm=torch.sum(l2norm,1)
-        return pl_loss(l2norm,y,distance)
+        pred,distance=self.pl.pred(x)
+        return pred,distance,x if embed else pred
+    def loss(self,pred,x,distance,y): 
+        return self.pl.loss(pred,x,distance,y)
 
 
 """ MNIST """
@@ -233,21 +226,14 @@ class Conv6PL(nn.Module):
     def __init__(self,distance):
         super(Conv6PL, self).__init__()
         self.conv=ConvNet()
-        self.embeds=nn.Parameter(torch.randn(10,64),requires_grad=True)
-        self.distance=distance
-        self.L2dist=distances.LpDistance(power=2)
+        self.pl=PL(distance,64,10)
         self.apply(_weights_init)
     def forward(self, x, embed=False):
         x=self.conv(x)
-        distance=self.distance(x, self.embeds)
-        pred=-distance
-        # pred=-self.L2dist(x, self.embeds)
-        if embed: return pred,distance,x
-        return pred
-    def loss(self,x,distance,y): 
-        l2norm=self.L2dist(x,self.embeds)
-        l2norm=torch.sum(l2norm,1)
-        return pl_loss(l2norm,y,distance)
+        pred,distance=self.pl.pred(x)
+        return pred,distance,x if embed else pred
+    def loss(self,pred,x,distance,y): 
+        return self.pl.loss(pred,x,distance,y)
 
 
 
@@ -277,20 +263,43 @@ def regularization(features, centers, labels):
     distance=(torch.sum(distance, 0, keepdim=True))/features.shape[0]
     return distance
 
-def pl_loss(l2norm,y,distance,N_class=10):
+class PL(nn.Module):
+    def __init__(self,distance,dmodel,n_classes=10):
+        super(PL, self).__init__()
+        self.embeds=nn.Parameter(
+            torch.randn(n_classes,dmodel),requires_grad=True)
+        self.distance=distance
+        self.L2dist=distances.LpDistance(power=2)
+        self.criterion = nn.CrossEntropyLoss()
+        self.apply(_weights_init)
+    
+    def pred(self,x):
+        distance=self.distance(x, self.embeds)
+        pred=-distance
+        # pred=-self.L2dist(x, self.embeds)
+        return pred,distance
+
+    def loss(self,pred,x,distance,y):
+        l2norm=self.L2dist(x,self.embeds)
+        l2norm=torch.mean(torch.sum(l2norm,1))
+        plloss=pl_loss(y,distance)
+        celoss=self.criterion(pred, y)
+        return celoss+0.2*plloss+0.1*l2norm
+
+def pl_loss(y,distance,N_class=10): 
     targets=torch.nn.functional.one_hot(y,num_classes=N_class)
     loss=npair_loss(targets,distance,N_class) # npair minimize dist from sample to its proto, maximize dist to other protos
-    loss+=0.1*l2norm
     return torch.mean(loss)
 
 def gather_nd(x,y,w):
     pos=torch.cat(torch.where(y==w)).reshape(2,-1)
     return x[pos[0,:], pos[1,:]]
     
-def npair_loss(y,dist,K=10):
+def npair_loss(y,dist,K=10): # CHECKED, IT'S CORRECT
     pos = gather_nd(dist,y,1).reshape(-1,1)
     neg = gather_nd(dist,y,0).reshape(-1,K-1)
-    return torch.log(1+torch.sum(torch.exp(pos-neg),-1))
+    return torch.log(1+torch.sum(torch.exp(neg-pos),-1))
+
 
 if __name__ == "__main__":
     m=ResNet()
