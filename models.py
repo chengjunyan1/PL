@@ -126,7 +126,8 @@ class ResNet20PL(nn.Module):
     def forward(self, x, embed=False):
         x=self.resnet(x)
         pred,distance=self.pl.pred(x)
-        return pred,distance,x if embed else pred
+        if not embed: return pred
+        return pred,distance,x
     def loss(self,pred,x,distance,y): 
         return self.pl.loss(pred,x,distance,y)
 
@@ -231,7 +232,8 @@ class Conv6PL(nn.Module):
     def forward(self, x, embed=False):
         x=self.conv(x)
         pred,distance=self.pl.pred(x)
-        return pred,distance,x if embed else pred
+        if not embed: return pred
+        return pred,distance,x
     def loss(self,pred,x,distance,y): 
         return self.pl.loss(pred,x,distance,y)
 
@@ -284,8 +286,9 @@ class PL(nn.Module):
         l2norm=self.L2dist(x,self.embeds)
         l2norm=torch.mean(torch.sum(l2norm,1))
         plloss=pl_loss(y,distance,self.n_classes)
-        celoss=self.criterion(pred, y)
-        return celoss+0.2*plloss+0.1*l2norm
+        return plloss+0.1*l2norm
+        # celoss=self.criterion(pred, y)
+        # return celoss+0.2*plloss+0.1*l2norm
 
 def pl_loss(y,distance,N_class=10): 
     targets=torch.nn.functional.one_hot(y,num_classes=N_class)
@@ -298,7 +301,7 @@ def gather_nd(x,y,w):
 def npair_loss(y,dist,K=10): # CHECKED, IT'S CORRECT
     pos = gather_nd(dist,y,1).reshape(-1,1)
     neg = gather_nd(dist,y,0).reshape(-1,K-1)
-    return torch.log(1+torch.sum(torch.exp(neg-pos),-1))
+    return torch.log(1+torch.sum(torch.exp(pos-neg),-1))
 
 
 if __name__ == "__main__":
