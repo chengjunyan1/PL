@@ -124,7 +124,8 @@ class ResNet20PL(nn.Module):
         self.pl=PL(distance,64,10)
         self.apply(_weights_init)
     def forward(self, x, embed=False):
-        pred,distance=self.pl.pred(self.resnet(x))
+        x=self.resnet(x)
+        pred,distance=self.pl.pred(x)
         return pred,distance,x if embed else pred
     def loss(self,pred,x,distance,y): 
         return self.pl.loss(pred,x,distance,y)
@@ -228,7 +229,8 @@ class Conv6PL(nn.Module):
         self.pl=PL(distance,64,10)
         self.apply(_weights_init)
     def forward(self, x, embed=False):
-        pred,distance=self.pl.pred(self.conv(x))
+        x=self.conv(x)
+        pred,distance=self.pl.pred(x)
         return pred,distance,x if embed else pred
     def loss(self,pred,x,distance,y): 
         return self.pl.loss(pred,x,distance,y)
@@ -266,6 +268,7 @@ class PL(nn.Module):
         super(PL, self).__init__()
         self.embeds=nn.Parameter(
             torch.randn(n_classes,dmodel),requires_grad=True)
+        self.n_classes=n_classes
         self.distance=distance
         self.L2dist=distances.LpDistance(power=2)
         self.criterion = nn.CrossEntropyLoss()
@@ -280,14 +283,13 @@ class PL(nn.Module):
     def loss(self,pred,x,distance,y):
         l2norm=self.L2dist(x,self.embeds)
         l2norm=torch.mean(torch.sum(l2norm,1))
-        plloss=pl_loss(y,distance)
+        plloss=pl_loss(y,distance,self.n_classes)
         celoss=self.criterion(pred, y)
         return celoss+0.2*plloss+0.1*l2norm
 
 def pl_loss(y,distance,N_class=10): 
     targets=torch.nn.functional.one_hot(y,num_classes=N_class)
-    loss=npair_loss(targets,distance,N_class) # npair minimize dist from sample to its proto, maximize dist to other protos
-    return torch.mean(loss)
+    return torch.mean(npair_loss(targets,distance,N_class))
 
 def gather_nd(x,y,w):
     pos=torch.cat(torch.where(y==w)).reshape(2,-1)
