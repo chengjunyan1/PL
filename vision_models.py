@@ -175,20 +175,20 @@ class PL(nn.Module):
         self.apply(_weights_init)
     
     def pred(self,x):
-        distance=self.loss_dist(x, self.embeds) # use lossdist or normdist here?
+        distance=self.loss_dist(x, self.embeds) 
         distance=distance.reshape(-1,self.C,self.K).mean(1)
-        pred=-self.L2dist(x, self.embeds)
+        pred=-self.loss_dist(x, self.embeds) # use lossdist or normdist here for prediction?
         pred=pred.reshape(-1,self.C,self.K).mean(1)
         return pred,distance
 
     def loss(self,pred,x,distance,y,x_adv=None,option=[0.1,0.2]):
         a,b=option 
-        normdist=self.L2dist(x,self.embeds)
+        normdist=self.norm_dist(x,self.embeds)
         normdist=normdist.reshape(-1,self.C,self.K).mean(1)
         plnorm=pl_norm(y,normdist,self.K)
         plloss=pl_loss(y,distance,self.K)
         if x_adv is not None:
-            advdist=self.L2dist(x_adv,self.embeds)
+            advdist=self.norm_dist(x_adv,self.embeds)
             advnorm=pl_norm(y,advdist,self.K)
             plloss+=a*advnorm
         return plloss+b*plnorm
