@@ -12,7 +12,7 @@ import torch.utils.data
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 
-import models
+import vision_models as models
 from ML.triplet_margin_loss import TripletMarginLoss as TML
 from ML.n_pairs_loss import NPairsLoss as NPL
 from pytorch_metric_learning import distances
@@ -20,12 +20,23 @@ import torchattacks
 from OOD.cal import testood
 
 
+def name_helper(args):
+    if args.loss=='PL':
+        savename=args.model+'_'+args.name+'_'+args.lossdist+'-'+args.normdist
+        savename+='_C'+str(args.C)+'_D'+str(args.D)
+        savename+='_a'+str(args.ploption[0])+'-b'+str(args.ploption[1])
+        savename+='_advnorm-'+str(args.adv_norm)
+    else:
+        savename=args.model+'_D'+str(args.D)+'_'+args.loss+'_'+args.name
+    return savename
+
 def model_loader(args,model,eval=False):
     best_prec1=0
     save_dir=os.path.join(args.save_dir, args.group)
     save_dir=os.path.join(save_dir, args.dataset)
+    savename=name_helper(args)
     if eval: 
-        resume_path=os.path.join(save_dir, args.loss+'_'+args.name+'_best.th')
+        resume_path=os.path.join(save_dir, savename+'_best.th')
         if os.path.isfile(resume_path):
             print("=> loading checkpoint '{}'".format(resume_path))
             checkpoint = torch.load(resume_path)
@@ -33,7 +44,7 @@ def model_loader(args,model,eval=False):
         else: print("=> no checkpoint found at '{}'".format(resume_path))
         return model
     else: 
-        resume_path=os.path.join(save_dir, args.loss+'_'+args.name+'_checkpoint.th')
+        resume_path=os.path.join(save_dir, savename+'_checkpoint.th')
         if os.path.isfile(resume_path):
             print("=> loading checkpoint '{}'".format(resume_path))
             checkpoint = torch.load(resume_path)
@@ -79,6 +90,23 @@ def main(args, model, attack=None):
             ])),
             batch_size=args.batch_size, shuffle=False,
             num_workers=args.workers, pin_memory=True)
+    elif args.dataset=='svhn':
+        d=datasets.SVHN(root='./data', split='train', transform=transforms.Compose([
+                # transforms.RandomCrop([54, 54]),
+                transforms.ToTensor(),
+            ]), download=True)
+        indexes=torch.tensor(random.sample(range(d.data.shape[0]),int(args.ratio*d.data.shape[0])))
+        d.data=d.data[indexes]
+        d.labels=torch.Tensor(d.labels).long().index_select(0,indexes)
+        train_loader = torch.utils.data.DataLoader(d,
+            batch_size=args.batch_size, shuffle=True,
+            num_workers=args.workers, pin_memory=True)
+        val_loader = torch.utils.data.DataLoader(
+            datasets.SVHN(root='./data', split='test', transform=transforms.Compose([
+                transforms.ToTensor(),
+            ]), download=True),
+            batch_size=args.batch_size, shuffle=False,
+            num_workers=args.workers, pin_memory=True)
     elif args.dataset=='mnist':
         d=datasets.MNIST(root='./data', train=True, download=True,
                             transform=transforms.Compose([
@@ -100,7 +128,7 @@ def main(args, model, attack=None):
             batch_size=args.batch_size, shuffle=False,
             num_workers=args.workers, pin_memory=True)
 
-    optimizer = torch.optim.SGD(model.parameters(), args.lr,
+    optimizer = torch.optim.SGD([{'params': model.parameters(), 'initial_lr': args.lr}], args.lr,
                                 momentum=args.momentum,
                                 weight_decay=args.weight_decay)
 
@@ -131,17 +159,19 @@ def main(args, model, attack=None):
         best_prec1 = max(prec1+robust, best_prec1)
         print('Epoch',epoch+1,'/',args.epochs,'time:',time.time()-te)
 
+
+        savename=name_helper(args)
         save_checkpoint({
             'epoch': epoch + 1,
             'state_dict': model.state_dict(),
             'best_prec1': best_prec1,
-        }, is_best, filename=os.path.join(save_dir, args.loss+'_'+args.name+'_checkpoint.th'))
+        }, is_best, filename=os.path.join(save_dir, savename+'_checkpoint.th'))
 
         if is_best:
             save_checkpoint({
                 'state_dict': model.state_dict(),
                 'best_prec1': best_prec1,
-            }, is_best, filename=os.path.join(save_dir, args.loss+'_'+args.name+'_best.th'))
+            }, is_best, filename=os.path.join(save_dir, savename+'_best.th'))
     print('Accomplished. Total time:',time.time()-ts)
 
 def train(args, train_loader, model, optimizer, epoch, attack=None):
@@ -172,9 +202,12 @@ def train(args, train_loader, model, optimizer, epoch, attack=None):
         adversarial_inputs=None
         if args.AT and attack:
             model.eval()
-            adversarial_inputs = attack(input_var, target_var)
-            input_var = torch.cat((input_var, adversarial_inputs), dim=0)
-            target_var=torch.cat((target_var, target_var), dim=0)
+            if args.loss=='PL' and args.adv_norm:
+                adversarial_inputs = attack(input_var, target_var)
+            else:
+                adversarial_inputs = attack(input_var[bs//2:], target_var[bs//2:])
+                input_var = torch.cat((input_var[:bs//2], adversarial_inputs), dim=0)
+                # target_var=torch.cat((target_var, target_var), dim=0)
             model.train()
 
         if args.loss=='DCE':
@@ -185,7 +218,11 @@ def train(args, train_loader, model, optimizer, epoch, attack=None):
             loss=model.loss(output,embeds,target_var)
         elif args.loss=='PL':
             output, distance, x= model(input_var,True)
-            loss=model.loss(x,distance,target_var)
+            if args.AT and attack and args.adv_norm:
+                output_adv, distance_adv, x_adv= model(adversarial_inputs,True)
+                loss=model.loss(output,x,distance,target_var,x_adv,option=args.ploption)
+            else: 
+                loss=model.loss(output,x,distance,target_var,option=args.ploption)
         else:
             output,_ = model(input_var,True)
             loss = model.loss(output, target_var)
@@ -200,8 +237,12 @@ def train(args, train_loader, model, optimizer, epoch, attack=None):
         # measure accuracy and record loss
         robust1=0
         if args.AT and attack:
-            prec1 = accuracy(output.data[:bs], target_var[:bs])[0]
-            robust1 = accuracy(output.data[bs:], target_var[bs:])[0]
+            if args.loss=='PL' and args.adv_norm:
+                prec1 = accuracy(output.data, target_var)[0]
+                robust1 = accuracy(output_adv.data, target_var)[0]
+            else:    
+                prec1 = accuracy(output.data[:bs//2], target_var[:bs//2])[0]
+                robust1 = accuracy(output.data[bs//2:], target_var[bs//2:])[0]
             robust.update(robust1.item(), bs)
         else:
             prec1 = accuracy(output.data, target_var)[0]
@@ -288,31 +329,26 @@ def accuracy(output, target, topk=(1,)):
         correct_k = correct[:k].view(-1).float().sum(0)
         res.append(correct_k.mul_(100.0 / batch_size))
     return res
-
-
-def dist_helper(dist):
-    assert dist in ['dotproduct']
-    if dist=='dotproduct': return distances.DotProductSimilarity()
     
-def model_helper(args,distance=None):
+def atk_helper(args,eps):
+    if args.atk=='pgd': return torchattacks.PGD(model, eps=eps, alpha=2/255, steps=20)
+    elif args.atk=='fgsm': return torchattacks.FGSM(model, eps=eps)
+    else: print('No attack.'); return None
+
+def model_helper(args):
     assert args.loss in ['DCE','vanilla','PL','TLA','NLA']
     if args.loss=='DCE': print('Using DCE Loss')
     elif args.loss=='PL': print('Using PL Loss')
     elif args.loss=='TLA': print('Using Triplet Loss')
     elif args.loss=='NLA': print('Using N-pair Loss')
-    elif args.loss=='vanilla': print('Using vanilla model')
-    if args.dataset=='mnist':
-        if args.loss=='DCE': return models.Conv6DCE().cuda()
-        elif args.loss=='PL': return models.Conv6PL(dist_helper(args.dist)).cuda()
-        elif args.loss=='TLA': return models.Conv6ML(TML()).cuda()
-        elif args.loss=='NLA': return models.Conv6ML(NPL()).cuda()
-        elif args.loss=='vanilla': return models.Conv6().cuda()
-    elif args.dataset=='cifar':
-        if args.loss=='DCE': return models.ResNet20DCE().cuda()
-        elif args.loss=='PL': return models.ResNet20PL(dist_helper(args.dist)).cuda()
-        elif args.loss=='TLA': return models.ResNet20ML(TML()).cuda()
-        elif args.loss=='NLA': return models.ResNet20ML(NPL()).cuda()
-        elif args.loss=='vanilla': return models.ResNet20().cuda()
+    elif args.loss=='vanilla': print('Using Vanilla model')
+    modelname='conv' if args.dataset=='mnist' else args.model 
+    print('Using',modelname,'model')
+    if args.loss=='DCE': return models.DCEmodel(modelname,args.D).cuda()
+    elif args.loss=='PL': return models.PLmodel(modelname,args.C,args.D,args.lossdist,args.normdist).cuda()
+    elif args.loss=='TLA': return models.MLmodel(TML(),modelname,args.D).cuda()
+    elif args.loss=='NLA': return models.MLmodel(NPL(),modelname,args.D).cuda()
+    elif args.loss=='vanilla': return models.Vanillamodel(modelname,args.D).cuda()
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Prototype learning')
@@ -320,7 +356,14 @@ if __name__ == '__main__':
     parser.add_argument('--name', type=str,  default='model', help='model name')
     parser.add_argument('--group', type=str,  default='standard', help='experiment group')
     parser.add_argument('--loss', type=str,  default='', help='loss')
-    parser.add_argument('--dist', type=str,  default='dotproduct', help='distance metric')
+    parser.add_argument('--model', type=str,  default='resnet', help='distance metric')
+    parser.add_argument('--atk', type=str,  default='', help='atk')
+    parser.add_argument('--C', type=int,  default=1, help='number of prototypes')
+    parser.add_argument('--D', type=int,  default=64, help='d_model')
+    parser.add_argument('--lossdist', type=str,  default='L2', help='loss distance metric')
+    parser.add_argument('--normdist', type=str,  default='L2', help='norm distance metric')
+    parser.add_argument('--adv_norm', type=bool,  default=True, help='seperate adv norm term')
+    parser.add_argument('--ploption', type=list,  default=[0.1,0.1], help='[a,b]')
     parser.add_argument('--AT', type=bool,  default=False, help='use adversarial training')
     parser.add_argument('--dataset', type=str,  default='mnist', help='dataset')
     parser.add_argument('-j', '--workers', default=0, type=int, metavar='N',
@@ -351,41 +394,71 @@ if __name__ == '__main__':
                         help='Saves checkpoints at every specified number of epochs', type=int)
     args = parser.parse_args()
 
-    args.name='test'
-    args.group='woat'
-    args.loss='vanilla'
-    args.dist='dotproduct'
-    args.dataset='mnist'
-    args.epochs=10
+
+    """
+    Naming convention:
+        args.name: experiment name, arbitrary
+        args.group: 
+            woat: no AT
+            fgsm: trained with fgsm
+            ...
+    """
+
+    args.name='test' 
+    args.group='woat' #work only for non-PL models
     args.batch_size=256
     args.lr=1e-2
     args.ratio=1.0 # For FSL
-    
     args.resume=False
     args.evaluate=False
+    
+    args.adv_norm=True # use a seperate adv norm term
+    args.C=2
+    args.D=64
+    args.lossdist='L2'
+    args.normdist='L2'
+    args.ploption=[0.1,0.2] # a,b
+    args.model='resnet'
 
-    losses=['vanilla','PL','DCE','TLA','NLA']
-    # losses=['PL']
+    # models=['resnet','vgg','mobilenet','conv']
+    # losses=['vanilla','PL','DCE','TLA','NLA']
+    losses=['PL']
+    # dataset=['mnist','cifar']
+    dataset=['mnist']
 
     """ 1. Standard """
-    # for i in losses:
-    #     args.loss=i
-    #     model=model_helper(args)
-    #     main(args,model)
+    for d in dataset:
+      args.dataset=d
+      if d=='mnist': args.epochs=10
+      if d=='cifar': args.epochs=200
+      if d=='svhn': args.epochs=200
+      for i in losses:
+        print('___________________________________________________')
+        args.loss=i
+        model=model_helper(args)
+        main(args,model)
 
 
     """ 2. AT """
+    atks=['fgsm','pgd']
+    # atks=['fgsm']
     args.evaluate=True
-    args.AT=False # whether use AT 
-    for i in losses:
-        print('______________________________')
-        args.loss=i
-        model=model_helper(args)
-        # atk = torchattacks.PGD(model, eps=0.3, alpha=2/255, steps=20)
-        # atk = torchattacks.FGSM(model, eps=0.3)
-        # atk = torchattacks.DeepFool(model, steps=50, overshoot=0.02)
-        atk = torchattacks.AutoAttack(model, norm='Linf', eps=0.3)
-        main(args,model,atk)
+    args.AT=True # whether use AT 
+    for args.atk in atks:
+        print('\n=========================================')
+        print('Using attack:',args.atk.upper())
+        for d in dataset:
+          args.dataset=d
+          if d=='mnist': eps=0.3; args.epochs=10
+          if d=='cifar': eps=0.03; args.epochs=200
+          if d=='svhn': eps=0.03; args.epochs=200
+          for i in losses:
+              print('______________________________')
+              args.loss=i
+              args.batch_size=64 if i=='TLA' else 256
+              model=model_helper(args)
+              atk=atk_helper(args,eps)
+              main(args,model,atk)
     
 
     """ 3. OOD Test on a Trained model (w/wo ODIN) """
@@ -394,7 +467,7 @@ if __name__ == '__main__':
     # assert dataname in ["Imagenet","Imagenet_resize","LSUN","LSUN_resize",
     #                 "iSUN","Gaussian","Uniform"]
     # model=model_loader(args,model,eval=True)
-    # expname=args.group+'_'+args.loss+'_'+args.name
+    # expname=args.group+'_'+args.model+'_D'+args.D+'_'+args.loss+'_'+args.name
     # model.eval()
     # testood(expname,model,dataname,args.workers)
 
