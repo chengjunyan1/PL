@@ -482,11 +482,11 @@ if __name__ == '__main__':
     args.model='resnet'
 
     # backbones=['resnet','vgg','mobilenet','conv']
-    backbones=['resnet']
+    backbones=['mobilenet']
     # losses=['vanilla','PL','DCE','TLA','NLA']
     losses=['PL']
     # dataset=['mnist','cifar','svhn']
-    dataset=['cifar']
+    dataset=['mnist']
 
 
     """ Train """
