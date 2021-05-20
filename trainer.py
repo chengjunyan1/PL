@@ -22,12 +22,12 @@ from OOD.cal import testood
 
 def name_helper(args):
     if args.loss=='PL':
-        savename=args.model+'_'+args.name+'_'+args.lossdist+'-'+args.normdist
-        savename+='_C'+str(args.C)+'_D'+str(args.D)
+        savename=args.model+'-D'+str(args.D)+'_'+args.name
+        savename+='_'+args.lossdist+'-'+args.normdist+'_C'+str(args.C)
         savename+='_a'+str(args.ploption[0])+'-b'+str(args.ploption[1])
         savename+='_advnorm-'+str(args.adv_norm)
     else:
-        savename=args.model+'_D'+str(args.D)+'_'+args.loss+'_'+args.name
+        savename=args.model+'-D'+str(args.D)+'_'+args.loss+'_'+args.name
     return savename
 
 def model_loader(args,model,eval=False):
@@ -330,7 +330,7 @@ def accuracy(output, target, topk=(1,)):
         res.append(correct_k.mul_(100.0 / batch_size))
     return res
     
-def atk_helper(args,eps):
+def atk_helper(args,model,eps):
     if args.atk=='pgd': return torchattacks.PGD(model, eps=eps, alpha=2/255, steps=20)
     elif args.atk=='fgsm': return torchattacks.FGSM(model, eps=eps)
     else: print('No attack.'); return None
@@ -349,6 +349,67 @@ def model_helper(args):
     elif args.loss=='TLA': return models.MLmodel(TML(),modelname,args.D).cuda()
     elif args.loss=='NLA': return models.MLmodel(NPL(),modelname,args.D).cuda()
     elif args.loss=='vanilla': return models.Vanillamodel(modelname,args.D).cuda()
+
+
+def AR_test(atks,losses,dataset,backbones):
+    args.evaluate=True
+    for m in backbones:
+        args.model=m
+        print('+----------------------- Backbone: '+m,' --------------------+\n')
+        for args.atk in atks:
+            print('~~~~~~~~~~~~~~~~~~~~~~ Attack: '+args.atk.upper()+' ~~~~~~~~~~~~~~~~~~~~~~\n')
+            for d in dataset:
+                print('===================== Dataset: '+d+' =====================\n')
+                args.dataset=d
+                if d=='mnist': eps=0.3
+                if d=='cifar': eps=0.03
+                if d=='svhn': eps=0.03
+                for i in losses:
+                    print('______________________ Loss: '+i+' ____________________\n')
+                    args.loss=i
+                    model=model_helper(args)
+                    atk=atk_helper(args,model,eps)
+                    main(args,model,atk)
+    
+def OOD_test(ood_dataset,losses,dataset,backbones):
+    for m in backbones:
+        args.model=m
+        print('+----------------------- Backbone: '+m,' --------------------+\n')
+        for indis in dataset:
+            if indis=='mnist': continue
+            args.dataset=indis
+            for dataname in ood_dataset:
+                for i in losses:
+                    print('______________________ Loss: '+i+' ____________________\n')
+                    args.loss=i
+                    model=model_helper(args)
+                    model=model_loader(args,model,eval=True) # it will load model based on args
+                    expname=args.group+'_'+indis+'_'+args.model+'-D'+str(args.D)+'_'+args.loss+'_'+args.name # not useful actually
+                    model.eval()
+                    testood(expname,model,dataname,args.workers,indis)
+                    
+def trainer(args,losses,dataset,backbones):
+    if args.AT: print('Training with attack: '+args.atk.upper())
+    for m in backbones:
+        args.model=m
+        print('+----------------------- Backbone: '+m,' --------------------+\n')
+        for d in dataset:
+            print('===================== Dataset: '+d+' =====================\n')
+            args.dataset=d
+            if d=='mnist': args.epochs=10;eps=0.3
+            if d=='cifar': args.epochs=200;eps=0.03
+            if d=='svhn': args.epochs=200;eps=0.03
+            for i in losses:
+                print('______________________ Loss: '+i+' ____________________\n')
+                args.loss=i
+                atk=None
+                if args.AT:
+                    print('Attack: '+args.atk.upper())
+                    args.batch_size=64 if i=='TLA' else 256
+                    atk=atk_helper(args,eps)
+                model=model_helper(args)
+                main(args,model,atk)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Prototype learning')
@@ -420,60 +481,34 @@ if __name__ == '__main__':
     args.ploption=[0.1,0.2] # a,b
     args.model='resnet'
 
-    # models=['resnet','vgg','mobilenet','conv']
+    # backbones=['resnet','vgg','mobilenet','conv']
+    backbones=['resnet']
     # losses=['vanilla','PL','DCE','TLA','NLA']
     losses=['PL']
-    # dataset=['mnist','cifar']
-    dataset=['mnist']
-
-    """ 1. Standard """
-    for d in dataset:
-      args.dataset=d
-      if d=='mnist': args.epochs=10
-      if d=='cifar': args.epochs=200
-      if d=='svhn': args.epochs=200
-      for i in losses:
-        print('___________________________________________________')
-        args.loss=i
-        model=model_helper(args)
-        main(args,model)
+    # dataset=['mnist','cifar','svhn']
+    dataset=['cifar']
 
 
-    """ 2. AT """
-    atks=['fgsm','pgd']
+    """ Train """
+    args.AT=False # whether do AT
+    args.atk=None
+    trainer(args,losses,dataset,backbones)
+
+
+    """ Adversarial Robustness Test """
+    # atks=['fgsm','pgd']
+    
     # atks=['fgsm']
-    args.evaluate=True
-    args.AT=True # whether use AT 
-    for args.atk in atks:
-        print('\n=========================================')
-        print('Using attack:',args.atk.upper())
-        for d in dataset:
-          args.dataset=d
-          if d=='mnist': eps=0.3; args.epochs=10
-          if d=='cifar': eps=0.03; args.epochs=200
-          if d=='svhn': eps=0.03; args.epochs=200
-          for i in losses:
-              print('______________________________')
-              args.loss=i
-              args.batch_size=64 if i=='TLA' else 256
-              model=model_helper(args)
-              atk=atk_helper(args,eps)
-              main(args,model,atk)
+    # AR_test(atks,losses,dataset,backbones)
     
 
-    """ 3. OOD Test on a Trained model (w/wo ODIN) """
-    # model=model_helper(args)
-    # dataname='Imagenet'
-    # assert dataname in ["Imagenet","Imagenet_resize","LSUN","LSUN_resize",
+    """ OOD Test on a Trained model (w/wo ODIN) """
+    # ood_dataset=["Imagenet","Imagenet_resize","LSUN","LSUN_resize",
     #                 "iSUN","Gaussian","Uniform"]
-    # model=model_loader(args,model,eval=True)
-    # expname=args.group+'_'+args.model+'_D'+args.D+'_'+args.loss+'_'+args.name
-    # model.eval()
-    # testood(expname,model,dataname,args.workers)
+    
+    # ood_dataset=["Imagenet"]
+    # OOD_test(ood_dataset,losses,dataset,backbones)
 
-
-    """ 4. FSL """
-    # args.ratio=0.1 
 
 
     
