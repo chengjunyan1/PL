@@ -32,6 +32,7 @@ def name_helper(args):
 
 def model_loader(args,model,eval=False):
     best_prec1=0
+    args.start_epoch=0
     save_dir=os.path.join(args.save_dir, args.group)
     save_dir=os.path.join(save_dir, args.dataset)
     savename=name_helper(args)
@@ -66,7 +67,7 @@ def main(args, model, attack=None):
     # optionally resume from a checkpoint
     if args.evaluate: model=model_loader(args,model,eval=True)
     elif args.resume: model,args,best_prec1=model_loader(args,model,eval=False)
-
+    
     cudnn.benchmark = True
 
     if args.dataset=='cifar':
@@ -133,7 +134,7 @@ def main(args, model, attack=None):
                                 weight_decay=args.weight_decay)
 
     lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer,
-                                                        milestones=[100, 150], last_epoch=args.start_epoch - 1)
+                    milestones=[100, 150], last_epoch=args.start_epoch - 1)
 
     if args.evaluate:
         print('Evaluating...')
@@ -158,7 +159,6 @@ def main(args, model, attack=None):
         is_best = prec1+robust > best_prec1
         best_prec1 = max(prec1+robust, best_prec1)
         print('Epoch',epoch+1,'/',args.epochs,'time:',time.time()-te)
-
 
         savename=name_helper(args)
         save_checkpoint({
@@ -332,7 +332,12 @@ def accuracy(output, target, topk=(1,)):
     
 def atk_helper(args,model,eps):
     if args.atk=='pgd': return torchattacks.PGD(model, eps=eps, alpha=2/255, steps=20)
+    if args.atk=='pgdl2': 
+        eps=3 if args.dataset=='mnist' else 2
+        return torchattacks.PGDL2(model, eps=eps, alpha=2/255, steps=20)
+    if args.atk=='pgdrs': return torchattacks.PGD(model, eps=eps, alpha=2/255, steps=7,random_start=True)
     elif args.atk=='fgsm': return torchattacks.FGSM(model, eps=eps)
+    elif args.atk=='bim': return torchattacks.BIM(model, eps=eps, alpha=1/255, steps=20)
     else: print('No attack.'); return None
 
 def model_helper(args):
@@ -345,42 +350,47 @@ def model_helper(args):
     modelname='conv' if args.dataset=='mnist' else args.model 
     print('Using',modelname,'model')
     if args.loss=='DCE': return models.DCEmodel(modelname,args.D).cuda()
-    elif args.loss=='PL': return models.PLmodel(modelname,args.C,args.D,args.lossdist,args.normdist).cuda()
+    elif args.loss=='PL': return models.PLmodel(modelname,args.C,args.D,args.lossdist,args.normdist,args.preddist).cuda()
     elif args.loss=='TLA': return models.MLmodel(TML(),modelname,args.D).cuda()
     elif args.loss=='NLA': return models.MLmodel(NPL(),modelname,args.D).cuda()
     elif args.loss=='vanilla': return models.Vanillamodel(modelname,args.D).cuda()
 
 
 def AR_test(atks,losses,dataset,backbones):
+    print('\n','*'*50,'\nAdversarial robustness test start.\n')
     args.evaluate=True
-    for m in backbones:
-        args.model=m
-        print('+----------------------- Backbone: '+m,' --------------------+\n')
-        for args.atk in atks:
-            print('~~~~~~~~~~~~~~~~~~~~~~ Attack: '+args.atk.upper()+' ~~~~~~~~~~~~~~~~~~~~~~\n')
-            for d in dataset:
-                print('===================== Dataset: '+d+' =====================\n')
-                args.dataset=d
-                if d=='mnist': eps=0.3
-                if d=='cifar': eps=0.03
-                if d=='svhn': eps=0.03
+    for d in dataset:
+        print('===================== Dataset: '+d+' =====================')
+        args.dataset=d
+        if d=='mnist': args.epochs=10;eps=0.3;backbone=['conv']
+        if d=='cifar': args.epochs=200;eps=8/255;backbone=backbones
+        if d=='svhn': args.epochs=200;eps=8/255;backbone=backbones
+        for m in backbone:
+            if d!='mnist' and m=='conv': continue
+            args.model=m
+            print('\n+----------------------- Backbone: '+m,' --------------------+')
+            for args.atk in atks:
+                print('\n~~~~~~~~~~~~~~~~~~~~~~ Attack: '+args.atk.upper()+' ~~~~~~~~~~~~~~~~~~~~~~')
                 for i in losses:
-                    print('______________________ Loss: '+i+' ____________________\n')
+                    print('______________________ Loss: '+i+' ____________________')
                     args.loss=i
                     model=model_helper(args)
                     atk=atk_helper(args,model,eps)
                     main(args,model,atk)
     
 def OOD_test(ood_dataset,losses,dataset,backbones):
+    print('\n','*'*50,'\nOOD robustness test start.\n')
     for m in backbones:
+        if m=='conv': continue
         args.model=m
         print('+----------------------- Backbone: '+m,' --------------------+\n')
         for indis in dataset:
             if indis=='mnist': continue
+            print('===================== Indis: '+indis+' =====================\n')
             args.dataset=indis
             for dataname in ood_dataset:
                 for i in losses:
-                    print('______________________ Loss: '+i+' ____________________\n')
+                    print('______________________ Loss: '+i+' ____________________')
                     args.loss=i
                     model=model_helper(args)
                     model=model_loader(args,model,eval=True) # it will load model based on args
@@ -389,18 +399,20 @@ def OOD_test(ood_dataset,losses,dataset,backbones):
                     testood(expname,model,dataname,args.workers,indis)
                     
 def trainer(args,losses,dataset,backbones):
+    print('\n','*'*50,'\nTraining start.\n')
     if args.AT: print('Training with attack: '+args.atk.upper())
-    for m in backbones:
-        args.model=m
-        print('+----------------------- Backbone: '+m,' --------------------+\n')
-        for d in dataset:
-            print('===================== Dataset: '+d+' =====================\n')
-            args.dataset=d
-            if d=='mnist': args.epochs=10;eps=0.3
-            if d=='cifar': args.epochs=200;eps=0.03
-            if d=='svhn': args.epochs=200;eps=0.03
+    for d in dataset:
+        print('===================== Dataset: '+d+' =====================')
+        args.dataset=d
+        if d=='mnist': args.epochs=10;eps=0.3;backbone=['conv']
+        if d=='cifar': args.epochs=200;eps=8/255;backbone=backbones
+        if d=='svhn': args.epochs=200;eps=8/255;backbone=backbones
+        for m in backbone:
+            if d!='mnist' and m=='conv': continue
+            args.model=m
+            print('+----------------------- Backbone: '+m,' --------------------+')
             for i in losses:
-                print('______________________ Loss: '+i+' ____________________\n')
+                print('______________________ Loss: '+i+' ____________________')
                 args.loss=i
                 atk=None
                 if args.AT:
@@ -423,6 +435,7 @@ if __name__ == '__main__':
     parser.add_argument('--D', type=int,  default=64, help='d_model')
     parser.add_argument('--lossdist', type=str,  default='L2', help='loss distance metric')
     parser.add_argument('--normdist', type=str,  default='L2', help='norm distance metric')
+    parser.add_argument('--preddist', type=str,  default='L2', help='pred distance metric')
     parser.add_argument('--adv_norm', type=bool,  default=True, help='seperate adv norm term')
     parser.add_argument('--ploption', type=list,  default=[0.1,0.1], help='[a,b]')
     parser.add_argument('--AT', type=bool,  default=False, help='use adversarial training')
@@ -470,25 +483,26 @@ if __name__ == '__main__':
     args.batch_size=256
     args.lr=1e-2
     args.ratio=1.0 # For FSL
-    args.resume=False
-    args.evaluate=False
     
     args.adv_norm=True # use a seperate adv norm term
     args.C=2
     args.D=64
     args.lossdist='L2'
     args.normdist='L2'
+    args.preddist='L2'
     args.ploption=[0.1,0.2] # a,b
-    args.model='resnet'
 
     # backbones=['resnet','vgg','mobilenet','conv']
     backbones=['mobilenet']
-    # losses=['vanilla','PL','DCE','TLA','NLA']
-    losses=['PL']
+    # losses=['PL','vanilla','DCE','TLA','NLA']
+    losses=['PL','vanilla']
     # dataset=['mnist','cifar','svhn']
     dataset=['mnist']
 
 
+    args.resume=True
+    args.evaluate=False
+    
     """ Train """
     args.AT=False # whether do AT
     args.atk=None
@@ -496,18 +510,14 @@ if __name__ == '__main__':
 
 
     """ Adversarial Robustness Test """
-    # atks=['fgsm','pgd']
-    
-    # atks=['fgsm']
-    # AR_test(atks,losses,dataset,backbones)
+    atks=['fgsm','pgd','bim','pgdrs','pgdl2']
+    AR_test(atks,losses,dataset,backbones)
     
 
     """ OOD Test on a Trained model (w/wo ODIN) """
-    # ood_dataset=["Imagenet","Imagenet_resize","LSUN","LSUN_resize",
-    #                 "iSUN","Gaussian","Uniform"]
-    
-    # ood_dataset=["Imagenet"]
-    # OOD_test(ood_dataset,losses,dataset,backbones)
+    ood_dataset=["Imagenet","Imagenet_resize","LSUN","LSUN_resize",
+                    "iSUN","Gaussian","Uniform"]
+    OOD_test(ood_dataset,losses,dataset,backbones)
 
 
 

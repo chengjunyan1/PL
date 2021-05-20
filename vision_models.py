@@ -79,11 +79,11 @@ class MLmodel(nn.Module):
         return self.criterion(pred, y)+self.mlloss(embeds,y,a,b)
 
 class PLmodel(nn.Module):
-    def __init__(self,model_name,C=2,D=64,lossdist='L2',normdist='L2',K=10):
+    def __init__(self,model_name,C=2,D=64,lossdist='L2',normdist='L2',preddist='L2',K=10):
         super(PLmodel, self).__init__()
         self.net,d_f=models_helper(model_name)
         self.emb=EmbedLayer(d_f,D)
-        self.pl=PL(C,D,lossdist,normdist,K)
+        self.pl=PL(C,D,lossdist,normdist,preddist,K)
         self.loss=self.pl.loss
         self.apply(_weights_init)
     def forward(self, x, embed=False):
@@ -165,19 +165,20 @@ def dist_helper(dist):
     elif dist=='Linf': return distances.LpDistance(power=np.Inf)
 
 class PL(nn.Module):
-    def __init__(self,C=2,D=64,lossdist='L2',normdist='L2',K=10):
+    def __init__(self,C=2,D=64,lossdist='L2',normdist='L2',preddist='L2',K=10):
         super(PL, self).__init__()
         self.embeds=nn.Parameter(
             torch.randn(C*K,D),requires_grad=True)
         self.C,self.K=C,K
         self.loss_dist=dist_helper(lossdist)
         self.norm_dist=dist_helper(normdist)
+        self.pred_dist=dist_helper(preddist)
         self.apply(_weights_init)
     
     def pred(self,x):
         distance=self.loss_dist(x, self.embeds) 
         distance=distance.reshape(-1,self.C,self.K).mean(1)
-        pred=-self.loss_dist(x, self.embeds) # use lossdist or normdist here for prediction?
+        pred=-self.pred_dist(x, self.embeds) # use lossdist or normdist here for prediction?
         pred=pred.reshape(-1,self.C,self.K).mean(1)
         return pred,distance
 
