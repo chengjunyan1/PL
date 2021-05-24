@@ -3,16 +3,15 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.nn.init as init
 import numpy as np
-from torchvision import models
+import vision as models
 from pytorch_metric_learning import distances
 
 
 def models_helper(name):
-    assert name in ['resnet','vgg','inception','conv','mobilenet']
-    if name=='resnet': return models.resnet18(),1000
-    elif name=='vgg': return models.vgg11(),1000
-    elif name=='mobilenet': return models.mobilenet_v3_small(),1000
-    elif name=='inception': return models.inception_v3(),1000
+    assert name in ['resnet','vgg','conv','mobilenet']
+    if name=='resnet': return models.resnet18(num_classes=10),512
+    elif name=='vgg': return models.vgg11(num_classes=10),4096
+    elif name=='mobilenet': return models.mobilenet_v3_small(num_classes=10),576
     elif name=='conv': return ConvNet(), 128 * 3 * 3
 
 class EmbedLayer(nn.Module):
@@ -21,23 +20,18 @@ class EmbedLayer(nn.Module):
         self.lin = nn.Linear(D_in, hid)
         self.act=nn.PReLU()
         self.emb = nn.Linear(hid, D)
+        self.dropout=nn.Dropout()
         self.apply(_weights_init)
-    def forward(self,x): return self.emb(self.act(self.lin(x)))
+    def forward(self,x): return self.emb(self.dropout(self.act(self.lin(x))))
     
 
 class Vanillamodel(nn.Module):
-    def __init__(self,model_name,D=64,K=10):
+    def __init__(self,model_name):
         super(Vanillamodel, self).__init__()
         self.net,d_f=models_helper(model_name)
-        self.emb=EmbedLayer(d_f,D)
-        self.linear = nn.Linear(D, K)
         self.criterion = nn.CrossEntropyLoss().cuda()
         self.apply(_weights_init)
-    def forward(self, x, embed=False):
-        x=self.emb(self.net(x))
-        pred=self.linear(x)
-        if embed: return pred,x
-        return pred
+    def forward(self,x): return self.net(x,pred=True)
     def loss(self,x,y): return self.criterion(x, y)
 
 class DCEmodel(nn.Module):
@@ -189,12 +183,12 @@ class PL(nn.Module):
         normdist=normdist.reshape(-1,self.C,self.K).mean(1)
         y=torch.nn.functional.one_hot(y,num_classes=self.K)
         plnorm=pl_norm(y,normdist)
-        plloss=pl_loss(y,distance,self.K)
+        plloss=pl_loss(y,distance,self.K)+a*plnorm
         if x_adv is not None:
             advdist=self.norm_dist(x_adv,self.embeds)
             advnorm=pl_norm(y,advdist,self.K)
-            plloss+=a*advnorm
-        return plloss+b*plnorm
+            plloss+=b*advnorm
+        return plloss
 
 def pl_norm(y,dist): # 1 pos 0 neg
     d=gather_nd(dist,y,1).reshape(-1,1)

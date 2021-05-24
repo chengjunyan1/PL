@@ -235,7 +235,7 @@ def train(args, train_loader, model, optimizer, epoch, attack=None):
             else: 
                 loss=model.loss(output,x,distance,target_var,option=args.ploption)
         else:
-            output,_ = model(input_var,True)
+            output = model(input_var)
             loss = model.loss(output, target_var)
 
         # compute gradient and do SGD step
@@ -364,7 +364,7 @@ def model_helper(args):
     elif args.loss=='PL': return models.PLmodel(modelname,args.C,args.D,args.lossdist,args.normdist,args.preddist).cuda()
     elif args.loss=='TLA': return models.MLmodel(TML(),modelname,args.D).cuda()
     elif args.loss=='NLA': return models.MLmodel(NPL(),modelname,args.D).cuda()
-    elif args.loss=='vanilla': return models.Vanillamodel(modelname,args.D).cuda()
+    elif args.loss=='vanilla': return models.Vanillamodel(modelname).cuda()
 
 
 def AR_test(atks,losses,dataset,backbones):
@@ -492,7 +492,7 @@ if __name__ == '__main__':
     """
 
     args.name='test' 
-    args.group='woat' #work only for non-PL models
+    args.group='new' #work only for non-PL models
     args.batch_size=256
     args.lr=1e-2
     args.ratio=1.0 # For FSL
@@ -505,12 +505,12 @@ if __name__ == '__main__':
     args.preddist='L2'
     args.ploption=[0.1,0.2] # a,b
 
-    # backbones=['resnet','vgg','inception','conv','mobilenet']
-    backbones=['resnet']
+    # backbones=['resnet','vgg','conv','mobilenet']
+    backbones=['mobilenet']
     # losses=['PL','vanilla','DCE','TLA','NLA']
     losses=['PL']
     # dataset=['mnist','cifar','svhn']
-    dataset=['cifar','svhn']
+    dataset=['mnist']
 
 
     args.resume=True
@@ -519,21 +519,21 @@ if __name__ == '__main__':
     args.best=1 # load which best, smaller newer
     
     """ Train """
-    # args.AT=False # whether do AT
-    # args.atk=None
-    # trainer(args,losses,dataset,backbones)
+    args.AT=False # whether do AT
+    args.atk=None
+    trainer(args,losses,dataset,backbones)
 
 
     """ Adversarial Robustness Test """
-    # atks=['fgsm','pgd','bim','pgdrs','pgdl2']
-    # # atks=['fgsm']
-    # AR_test(atks,losses,dataset,backbones)
+    atks=['fgsm','pgd','bim','pgdrs','pgdl2']
+    # atks=['fgsm']
+    AR_test(atks,losses,dataset,backbones)
     
 
     """ OOD Test on a Trained model (w/wo ODIN) """
-    ood_dataset=["Imagenet","Imagenet_resize","LSUN","LSUN_resize",
-                    "iSUN","Gaussian","Uniform"]
-    OOD_test(ood_dataset,losses,dataset,backbones)
+    # ood_dataset=["Imagenet","Imagenet_resize","LSUN","LSUN_resize",
+    #                 "iSUN","Gaussian","Uniform"]
+    # OOD_test(ood_dataset,losses,dataset,backbones)
 
 
 
