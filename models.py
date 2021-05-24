@@ -58,46 +58,40 @@ class ResNet(nn.Module):
             self.in_planes = planes * block.expansion
         return nn.Sequential(*layers)
 
-    def forward(self, x, pool=True):
+    def forward(self, x):
         out = F.relu(self.bn1(self.conv1(x)))
         out = self.layer1(out)
         out = self.layer2(out)
         out = self.layer3(out)
-        if pool: out = F.avg_pool2d(out, out.size()[3])
+        out = F.avg_pool2d(out, out.size()[3])
         out = out.view(out.size(0), -1)
         return out
 
 class ResNet20(nn.Module):
-    def __init__(self,D=None):
+    def __init__(self):
         super(ResNet20, self).__init__()
         self.resnet=ResNet()
-        self.lin=None if D is None else nn.Linear(4096,D)
-        D=64 if D is None else D
-        self.linear = nn.Linear(D, 10)
+        self.linear = nn.Linear(64, 10)
         self.criterion = nn.CrossEntropyLoss().cuda()
         self.apply(_weights_init)
     def forward(self, x, embed=False):
-        if self.lin is None: x=self.resnet(x)
-        else: x=self.lin(self.resnet(x,False))
+        x=self.resnet(x)
         pred=self.linear(x)
         if embed: return pred,x
         return pred
     def loss(self,x,y): return self.criterion(x, y)
 
 class ResNet20DCE(nn.Module):
-    def __init__(self,D=None):
+    def __init__(self):
         super(ResNet20DCE, self).__init__()
         self.resnet=ResNet()
         self.criterion = nn.CrossEntropyLoss()
         self.preluip1 = nn.PReLU()
-        self.lin=None if D is None else nn.Linear(4096,D)
-        D=64 if D is None else D
-        self.ip1 = nn.Linear(D, 2)
+        self.ip1 = nn.Linear(64, 2)
         self.dce=dce_loss(10,2)
         self.apply(_weights_init)
     def forward(self, x, embed=False,scale=2):
-        if self.lin is None: x=self.resnet(x)
-        else: x=self.lin(self.resnet(x,False))
+        x=self.resnet(x)
         features = self.preluip1(self.ip1(x))
         centers,distance=self.dce(features)
         if embed: return features,centers,distance #features, centers,distance
@@ -111,15 +105,12 @@ class ResNet20ML(nn.Module):
     def __init__(self,mlloss,D=None):
         super(ResNet20ML, self).__init__()
         self.resnet=ResNet()
-        self.lin=None if D is None else nn.Linear(4096,D)
-        D=64 if D is None else D
-        self.linear = nn.Linear(D, 10)
+        self.linear = nn.Linear(64, 10)
         self.criterion = nn.CrossEntropyLoss().cuda()
         self.mlloss=mlloss
         self.apply(_weights_init)
     def forward(self, x, embed=False):
-        if self.lin is None: x=self.resnet(x)
-        else: x=self.lin(self.resnet(x,False))
+        x=self.resnet(x)
         pred=self.linear(x)
         if embed: return pred,x
         return pred
@@ -127,17 +118,17 @@ class ResNet20ML(nn.Module):
         return self.criterion(pred, y)+self.mlloss(embeds,y,a,b)
 
 class ResNet20PL(nn.Module):
-    def __init__(self,lossdist,C=1,D=None):
+    def __init__(self,lossdist,normdist,preddist,C=1,D=None):
         super(ResNet20PL, self).__init__()
         self.resnet=ResNet()
-        self.lin=None if D is None else nn.Linear(4096,D)
+        self.lin=None if D is None else nn.Linear(64,D)
         D=64 if D is None else D
-        self.pl=PL(lossdist,D,10,C)
+        self.pl=PL(lossdist,normdist,preddist,D,10,C)
         self.loss=self.pl.loss
         self.apply(_weights_init)
     def forward(self, x, embed=False):
         if self.lin is None: x=self.resnet(x)
-        else: x=self.lin(self.resnet(x,False))
+        else: x=self.lin(self.resnet(x))
         pred,distance=self.pl.pred(x)
         if not embed: return pred
         return pred,distance,x
@@ -238,7 +229,7 @@ class Conv6PL(nn.Module):
     def __init__(self,distance,C=1):
         super(Conv6PL, self).__init__()
         self.conv=ConvNet()
-        self.pl=PL(distance,64,10,C)
+        self.pl=PL(distance,D=64,K=10,C=C)
         self.loss=self.pl.loss
         self.apply(_weights_init)
     def forward(self, x, embed=False):
@@ -276,30 +267,32 @@ def regularization(features, centers, labels):
     return distance
 
 class PL(nn.Module):
-    def __init__(self,lossdist,dmodel,n_classes=10,C=2):
+    def __init__(self,lossdist,normdist='L2',preddist='L2',D=64,K=10,C=2):
         super(PL, self).__init__()
         self.embeds=nn.Parameter(
-            torch.randn(C*n_classes,dmodel),requires_grad=True)
-        self.C,self.K=C,n_classes
-        self.lossdist=dist_helper(lossdist)
-        self.L2dist=distances.LpDistance(power=2)
+            torch.randn(C*K,D),requires_grad=True)
+        self.C,self.K=C,K
+        self.lossdist=distances.LpDistance(power=2) #dist_helper(lossdist)
+        self.normdist=distances.LpDistance(power=2) #dist_helper(normdist)
+        self.preddist=distances.LpDistance(power=2) #dist_helper(preddist)
+        # self.L2dist=distances.LpDistance(power=2)
         self.apply(_weights_init)
     
     def pred(self,x):
         distance=self.lossdist(x, self.embeds)
         distance=distance.reshape(-1,self.C,self.K).mean(1)
-        pred=-self.L2dist(x, self.embeds)
+        pred=-self.preddist(x, self.embeds)
         pred=pred.reshape(-1,self.C,self.K).mean(1)
         return pred,distance
 
     def loss(self,pred,x,distance,y,x_adv=None,option=[0.1,0.2]):
         a,b=option # normmode 1 pos 0 neg
-        normdist=self.L2dist(x,self.embeds)
+        normdist=self.normdist(x,self.embeds)
         normdist=normdist.reshape(-1,self.C,self.K).mean(1)
         plnorm=pl_norm(y,normdist,self.K)
         plloss=pl_loss(y,distance,self.K)
         if x_adv is not None:
-            advdist=self.L2dist(x_adv,self.embeds)
+            advdist=self.normdist(x_adv,self.embeds)
             advnorm=pl_norm(y,advdist,self.K)
             plloss+=a*advnorm
         # l2norm=l2_norm(x,self.embeds,y,self.K)

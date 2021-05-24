@@ -30,14 +30,16 @@ def name_helper(args):
         savename=args.model+'-D'+str(args.D)+'_'+args.loss+'_'+args.name
     return savename
 
-def model_loader(args,model,eval=False):
+def model_loader(args,model,eval=False,optimizer=None,lr_scheduler=None,best=1):
     best_prec1=0
     args.start_epoch=0
-    save_dir=os.path.join(args.save_dir, args.group)
+    save_dir=os.path.join(args.save_dir, 'PL') if args.loss=='PL' else args.save_dir
+    save_dir=os.path.join(save_dir, args.group)
     save_dir=os.path.join(save_dir, args.dataset)
+    if not os.path.exists(save_dir): os.makedirs(save_dir)
     savename=name_helper(args)
     if eval: 
-        resume_path=os.path.join(save_dir, savename+'_best.th')
+        resume_path=os.path.join(save_dir, savename+'_best'+str(best)+'.th')
         if os.path.isfile(resume_path):
             print("=> loading checkpoint '{}'".format(resume_path))
             checkpoint = torch.load(resume_path)
@@ -51,22 +53,30 @@ def model_loader(args,model,eval=False):
             checkpoint = torch.load(resume_path)
             args.start_epoch = checkpoint['epoch']
             best_prec1 = checkpoint['best_prec1']
+            optimizer.load_state_dict(checkpoint['optimizer'])
+            lr_scheduler.load_state_dict(checkpoint['scheduler'])
             model.load_state_dict(checkpoint['state_dict'])
         else: print("=> no checkpoint found at '{}'".format(resume_path))
         return model,args,best_prec1
 
 
 def main(args, model, attack=None):
-    save_dir=os.path.join(args.save_dir, args.group)
+    save_dir=os.path.join(args.save_dir, 'PL') if args.loss=='PL' else args.save_dir
+    save_dir=os.path.join(save_dir, args.group)
     save_dir=os.path.join(save_dir, args.dataset)
     if not os.path.exists(save_dir): os.makedirs(save_dir)
     # model = torch.nn.DataParallel(model)
     # model.cuda()
 
     best_prec1=0
+    optimizer = torch.optim.SGD([{'params': model.parameters(), 'initial_lr': args.lr}], args.lr,
+                                momentum=args.momentum,
+                                weight_decay=args.weight_decay)
+    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer,
+                    milestones=[100, 150], last_epoch=args.start_epoch - 1)
     # optionally resume from a checkpoint
-    if args.evaluate: model=model_loader(args,model,eval=True)
-    elif args.resume: model,args,best_prec1=model_loader(args,model,eval=False)
+    if args.evaluate: model=model_loader(args,model,eval=True,best=args.best)
+    elif args.resume: model,args,best_prec1=model_loader(args,model,False,optimizer,lr_scheduler)
     
     cudnn.benchmark = True
 
@@ -129,13 +139,6 @@ def main(args, model, attack=None):
             batch_size=args.batch_size, shuffle=False,
             num_workers=args.workers, pin_memory=True)
 
-    optimizer = torch.optim.SGD([{'params': model.parameters(), 'initial_lr': args.lr}], args.lr,
-                                momentum=args.momentum,
-                                weight_decay=args.weight_decay)
-
-    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer,
-                    milestones=[100, 150], last_epoch=args.start_epoch - 1)
-
     if args.evaluate:
         print('Evaluating...')
         validate(args, val_loader, model)
@@ -165,14 +168,22 @@ def main(args, model, attack=None):
             'epoch': epoch + 1,
             'state_dict': model.state_dict(),
             'best_prec1': best_prec1,
-        }, is_best, filename=os.path.join(save_dir, savename+'_checkpoint.th'))
+            'optimizer': optimizer.state_dict(),
+            'scheduler': lr_scheduler.state_dict(),
+        }, filename=os.path.join(save_dir, savename+'_checkpoint.th'))
 
-        if is_best:
-            save_checkpoint({
-                'state_dict': model.state_dict(),
-                'best_prec1': best_prec1,
-            }, is_best, filename=os.path.join(save_dir, savename+'_best.th'))
+        if is_best: best_saver(save_dir,model,savename,args.max_best)
     print('Accomplished. Total time:',time.time()-ts)
+
+def best_saver(save_dir,model,savename,max_best=3):
+    for i in range(max_best):
+        if not os.path.exists(os.path.join(save_dir, savename+'_best'+str(max_best-i)+'.th')): continue
+        if i==0: os.remove(os.path.join(save_dir, savename+'_best'+str(max_best-i)+'.th'))
+        else: os.rename(os.path.join(save_dir, savename+'_best'+str(max_best-i)+'.th'),
+                        os.path.join(save_dir, savename+'_best'+str(max_best-i+1)+'.th'))
+    save_checkpoint({'state_dict': model.state_dict(),}, 
+        filename=os.path.join(save_dir, savename+'_best1.th'))
+
 
 def train(args, train_loader, model, optimizer, epoch, attack=None):
     """
@@ -295,7 +306,7 @@ def validate(args, val_loader, model, attack=None):
     else: print(' Robustness {top1.avg:.3f}'.format(top1=top1))
     return top1.avg
 
-def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'): torch.save(state, filename)
+def save_checkpoint(state, filename='checkpoint.pth.tar'): torch.save(state, filename)
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""
@@ -330,14 +341,14 @@ def accuracy(output, target, topk=(1,)):
         res.append(correct_k.mul_(100.0 / batch_size))
     return res
     
-def atk_helper(args,model,eps):
-    if args.atk=='pgd': return torchattacks.PGD(model, eps=eps, alpha=2/255, steps=20)
+def atk_helper(args,model,eps,steps=20):
+    if args.atk=='pgd': return torchattacks.PGD(model, eps=eps, alpha=2/255, steps=steps)
     if args.atk=='pgdl2': 
         eps=3 if args.dataset=='mnist' else 2
-        return torchattacks.PGDL2(model, eps=eps, alpha=2/255, steps=20)
+        return torchattacks.PGDL2(model, eps=eps, alpha=2/255, steps=steps)
     if args.atk=='pgdrs': return torchattacks.PGD(model, eps=eps, alpha=2/255, steps=7,random_start=True)
     elif args.atk=='fgsm': return torchattacks.FGSM(model, eps=eps)
-    elif args.atk=='bim': return torchattacks.BIM(model, eps=eps, alpha=1/255, steps=20)
+    elif args.atk=='bim': return torchattacks.BIM(model, eps=eps, alpha=1/255, steps=steps)
     else: print('No attack.'); return None
 
 def model_helper(args):
@@ -439,6 +450,8 @@ if __name__ == '__main__':
     parser.add_argument('--adv_norm', type=bool,  default=True, help='seperate adv norm term')
     parser.add_argument('--ploption', type=list,  default=[0.1,0.1], help='[a,b]')
     parser.add_argument('--AT', type=bool,  default=False, help='use adversarial training')
+    parser.add_argument('--max_best', type=int,  default=5, help='max_best')
+    parser.add_argument('--best', type=int,  default=1, help='load which best')
     parser.add_argument('--dataset', type=str,  default='mnist', help='dataset')
     parser.add_argument('-j', '--workers', default=0, type=int, metavar='N',
                         help='number of data loading workers (default: 4)')
@@ -485,33 +498,36 @@ if __name__ == '__main__':
     args.ratio=1.0 # For FSL
     
     args.adv_norm=True # use a seperate adv norm term
-    args.C=2
+    args.C=1
     args.D=64
     args.lossdist='L2'
     args.normdist='L2'
     args.preddist='L2'
     args.ploption=[0.1,0.2] # a,b
 
-    # backbones=['resnet','vgg','mobilenet','conv']
-    backbones=['mobilenet']
+    # backbones=['resnet','vgg','inception','conv','mobilenet']
+    backbones=['resnet']
     # losses=['PL','vanilla','DCE','TLA','NLA']
-    losses=['PL','vanilla']
+    losses=['PL']
     # dataset=['mnist','cifar','svhn']
-    dataset=['mnist']
+    dataset=['cifar','svhn']
 
 
     args.resume=True
     args.evaluate=False
+    args.max_best=3 # save how many bests
+    args.best=1 # load which best, smaller newer
     
     """ Train """
-    args.AT=False # whether do AT
-    args.atk=None
-    trainer(args,losses,dataset,backbones)
+    # args.AT=False # whether do AT
+    # args.atk=None
+    # trainer(args,losses,dataset,backbones)
 
 
     """ Adversarial Robustness Test """
-    atks=['fgsm','pgd','bim','pgdrs','pgdl2']
-    AR_test(atks,losses,dataset,backbones)
+    # atks=['fgsm','pgd','bim','pgdrs','pgdl2']
+    # # atks=['fgsm']
+    # AR_test(atks,losses,dataset,backbones)
     
 
     """ OOD Test on a Trained model (w/wo ODIN) """

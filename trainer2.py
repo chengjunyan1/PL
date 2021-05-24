@@ -34,7 +34,7 @@ def model_loader(args,model,eval=False,optimizer=None,lr_scheduler=None,best=1):
     best_prec1=0
     args.start_epoch=0
     save_dir=os.path.join(args.save_dir, 'PL') if args.loss=='PL' else args.save_dir
-    save_dir=os.path.join(save_dir, 'T2_'+args.group)
+    save_dir=os.path.join(save_dir, args.group)
     save_dir=os.path.join(save_dir, args.dataset)
     if not os.path.exists(save_dir): os.makedirs(save_dir)
     savename=name_helper(args)
@@ -62,7 +62,7 @@ def model_loader(args,model,eval=False,optimizer=None,lr_scheduler=None,best=1):
 
 def main(args, model, attack=None):
     save_dir=os.path.join(args.save_dir, 'PL') if args.loss=='PL' else args.save_dir
-    save_dir=os.path.join(save_dir, 'T2_'+args.group)
+    save_dir=os.path.join(save_dir, args.group)
     save_dir=os.path.join(save_dir, args.dataset)
     if not os.path.exists(save_dir): os.makedirs(save_dir)
     # model = torch.nn.DataParallel(model)
@@ -341,14 +341,16 @@ def accuracy(output, target, topk=(1,)):
         res.append(correct_k.mul_(100.0 / batch_size))
     return res
     
-def atk_helper(args,model,eps,steps=20):
+def atk_helper(args,model,eps,steps=7):
     if args.atk=='pgd': return torchattacks.PGD(model, eps=eps, alpha=2/255, steps=steps)
-    if args.atk=='pgdl2': 
+    elif args.atk=='pgdl2': 
         eps=3 if args.dataset=='mnist' else 2
         return torchattacks.PGDL2(model, eps=eps, alpha=2/255, steps=steps)
-    if args.atk=='pgdrs': return torchattacks.PGD(model, eps=eps, alpha=2/255, steps=7,random_start=True)
+    elif args.atk=='pgdrs': return torchattacks.PGD(model, eps=eps, alpha=2/255, steps=7,random_start=True)
     elif args.atk=='fgsm': return torchattacks.FGSM(model, eps=eps)
     elif args.atk=='bim': return torchattacks.BIM(model, eps=eps, alpha=1/255, steps=steps)
+    elif args.atk=='apgd': return torchattacks.APGD(model, eps=eps, steps=7)
+    elif args.atk=='apgdt': return torchattacks.APGDT(model, eps=eps, steps=7)
     else: print('No attack.'); return None
 
 def model_helper(args):
@@ -360,16 +362,16 @@ def model_helper(args):
     elif args.loss=='vanilla': print('Using vanilla model')
     if args.dataset=='mnist':
         if args.loss=='DCE': return models.Conv6DCE().cuda()
-        elif args.loss=='PL': return models.Conv6PL(args.lossdist,C=args.C).cuda()
+        elif args.loss=='PL': return models.Conv6PL(args.lossdist,args.normdist,args.preddist,C=args.C).cuda()
         elif args.loss=='TLA': return models.Conv6ML(TML()).cuda()
         elif args.loss=='NLA': return models.Conv6ML(NPL()).cuda()
         elif args.loss=='vanilla': return models.Conv6().cuda()
-    elif args.dataset=='cifar':
+    elif args.dataset in ['cifar','svhn']:
         if args.loss=='DCE': return models.ResNet20DCE(D=args.D).cuda()
-        elif args.loss=='PL': return models.ResNet20PL(args.lossdist,C=args.C,D=args.D).cuda()
+        elif args.loss=='PL': return models.ResNet20PL(args.lossdist,args.normdist,args.preddist,C=args.C,D=args.D).cuda()
         elif args.loss=='TLA': return models.ResNet20ML(TML(),D=args.D).cuda()
         elif args.loss=='NLA': return models.ResNet20ML(NPL(),D=args.D).cuda()
-        elif args.loss=='vanilla': return models.ResNet20(D=args.D).cuda()
+        elif args.loss=='vanilla': return models.ResNet20().cuda()
 
 
 def AR_test(atks,losses,dataset,backbones):
@@ -497,48 +499,49 @@ if __name__ == '__main__':
     """
 
     args.name='test' 
-    args.group='woat' #work only for non-PL models
+    args.group='T2_woat' #work only for non-PL models
     args.batch_size=256
     args.lr=1e-2
     args.ratio=1.0 # For FSL
     
     args.adv_norm=True # use a seperate adv norm term
     args.C=1
-    args.D=64
+    args.D=None
     args.lossdist='L2'
     args.normdist='L2'
     args.preddist='L2'
-    args.ploption=[0.1,0.2] # a,b
+    args.ploption=[0.1,0.1] # a,b
 
     # backbones=['resnet','vgg','inception','conv','mobilenet']
     backbones=['resnet']
     # losses=['PL','vanilla','DCE','TLA','NLA']
-    losses=['PL']
+    losses=['vanilla']
     # dataset=['mnist','cifar','svhn']
-    dataset=['mnist']
+    dataset=['svhn']
+    
 
-
-    args.resume=False
+    args.resume=True
     args.evaluate=False
     args.max_best=3 # save how many bests
     args.best=1 # load which best, smaller newer
     
     """ Train """
-    args.AT=False # whether do AT
-    args.atk=None
-    trainer(args,losses,dataset,backbones)
+    # args.AT=False # whether do AT
+    # args.atk=None
+    # trainer(args,losses,dataset,backbones)
 
 
     """ Adversarial Robustness Test """
-    atks=['fgsm','pgd','bim','pgdrs','pgdl2']
-    # atks=['fgsm']
-    AR_test(atks,losses,dataset,backbones)
+    # atks=['fgsm','pgd','bim','pgdrs','pgdl2']
+    # atks=['apgd','apgdt']
+    # AR_test(atks,losses,dataset,backbones)
     
 
     """ OOD Test on a Trained model (w/wo ODIN) """
     # ood_dataset=["Imagenet","Imagenet_resize","LSUN","LSUN_resize",
     #                 "iSUN","Gaussian","Uniform"]
-    # OOD_test(ood_dataset,losses,dataset,backbones)
+    ood_dataset=["svhn"]
+    OOD_test(ood_dataset,losses,dataset,backbones)
 
 
 

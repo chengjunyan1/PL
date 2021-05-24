@@ -8,17 +8,18 @@ from pytorch_metric_learning import distances
 
 
 def models_helper(name):
-    assert name in ['resnet','vgg','mobilenet','conv']
+    assert name in ['resnet','vgg','inception','conv','mobilenet']
     if name=='resnet': return models.resnet18(),1000
-    elif name=='vgg': return models.vgg11_bn(),1000
+    elif name=='vgg': return models.vgg11(),1000
     elif name=='mobilenet': return models.mobilenet_v3_small(),1000
+    elif name=='inception': return models.inception_v3(),1000
     elif name=='conv': return ConvNet(), 128 * 3 * 3
 
 class EmbedLayer(nn.Module):
     def __init__(self,D_in,D,hid=512):
         super(EmbedLayer, self).__init__()
         self.lin = nn.Linear(D_in, hid)
-        self.act=nn.ReLU()
+        self.act=nn.PReLU()
         self.emb = nn.Linear(hid, D)
         self.apply(_weights_init)
     def forward(self,x): return self.emb(self.act(self.lin(x)))
@@ -162,7 +163,7 @@ def dist_helper(dist):
     if dist=='dotproduct': return distances.DotProductSimilarity()
     elif dist=='L1': return distances.LpDistance(power=1)
     elif dist=='L2': return distances.LpDistance(power=2)
-    elif dist=='Linf': return distances.LpDistance(power=np.Inf)
+    elif dist=='Linf': return distances.LpDistance(power=float('inf'))
 
 class PL(nn.Module):
     def __init__(self,C=2,D=64,lossdist='L2',normdist='L2',preddist='L2',K=10):
@@ -178,7 +179,7 @@ class PL(nn.Module):
     def pred(self,x):
         distance=self.loss_dist(x, self.embeds) 
         distance=distance.reshape(-1,self.C,self.K).mean(1)
-        pred=-self.pred_dist(x, self.embeds) # use lossdist or normdist here for prediction?
+        pred=-self.pred_dist(x, self.embeds)
         pred=pred.reshape(-1,self.C,self.K).mean(1)
         return pred,distance
 
@@ -186,7 +187,8 @@ class PL(nn.Module):
         a,b=option 
         normdist=self.norm_dist(x,self.embeds)
         normdist=normdist.reshape(-1,self.C,self.K).mean(1)
-        plnorm=pl_norm(y,normdist,self.K)
+        y=torch.nn.functional.one_hot(y,num_classes=self.K)
+        plnorm=pl_norm(y,normdist)
         plloss=pl_loss(y,distance,self.K)
         if x_adv is not None:
             advdist=self.norm_dist(x_adv,self.embeds)
@@ -194,26 +196,19 @@ class PL(nn.Module):
             plloss+=a*advnorm
         return plloss+b*plnorm
 
-def pl_norm(y,dist,K=10,mode=1): # 1 pos 0 neg
-    y=torch.nn.functional.one_hot(y,num_classes=K)
-    d=gather_nd(dist,y,mode).reshape(-1,1)
+def pl_norm(y,dist): # 1 pos 0 neg
+    d=gather_nd(dist,y,1).reshape(-1,1)
     return torch.mean(torch.sum(d,1))
 
-def pl_loss(y,distance,N_class=10): 
-    targets=torch.nn.functional.one_hot(y,num_classes=N_class)
-    return torch.mean(npair_loss(targets,distance,N_class))
+def pl_loss(y,dist,K=10): 
+    pos = gather_nd(dist,y,1).reshape(-1,1)
+    neg = gather_nd(dist,y,0).reshape(-1,K-1)
+    return torch.mean(torch.log(1+torch.sum(torch.exp(pos-neg),-1)))
 
 def gather_nd(x,y,w):
     pos=torch.cat(torch.where(y==w)).reshape(2,-1)
     return x[pos[0,:], pos[1,:]]
     
-def npair_loss(y,dist,K=10): # CHECKED, IT'S CORRECT
-    pos = gather_nd(dist,y,1).reshape(-1,1)
-    neg = gather_nd(dist,y,0).reshape(-1,K-1)
-    return torch.log(1+torch.sum(torch.exp(pos-neg),-1)) 
-
-
-        
     
         
         
