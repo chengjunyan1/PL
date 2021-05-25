@@ -1,7 +1,9 @@
 import argparse
+from genericpath import exists
 import os
 import shutil
 import time,random
+import logging
 
 import torch
 import torch.nn as nn
@@ -20,14 +22,15 @@ import torchattacks
 from OOD.cal import testood
 
 
+
 def name_helper(args):
     if args.loss=='PL':
-        savename=args.model+'-D'+str(args.D)+'_'+args.name
+        savename=args.model+'-D'+str(args.D)+'_'+args.dataset+'_'+args.group+'-'+args.name
         savename+='_'+args.lossdist+'-'+args.normdist+'_C'+str(args.C)
-        savename+='_a'+str(args.ploption[0])+'-b'+str(args.ploption[1])
-        savename+='_advnorm-'+str(args.adv_norm)
+        savename+='_a'+str(args.ploption[0])#+'-b'+str(args.ploption[1])
+        # savename+='_advnorm-'+str(args.adv_norm)
     else:
-        savename=args.model+'-D'+str(args.D)+'_'+args.loss+'_'+args.name
+        savename=args.model+'-D'+str(args.D)+'_'+args.loss+'_'+args.dataset+'_'+args.group+'-'+args.name
     return savename
 
 def model_loader(args,model,eval=False,optimizer=None,lr_scheduler=None,best=1):
@@ -141,9 +144,13 @@ def main(args, model, attack=None):
 
     if args.evaluate:
         print('Evaluating...')
-        validate(args, val_loader, model)
-        if attack: validate(args, val_loader, model, attack)
-        return
+        top1=validate(args, val_loader, model)
+        msg_a=' Accuracy {:.3f}'.format(top1)
+        msg_r=''
+        if attack: 
+            top1=validate(args, val_loader, model, attack)
+            msg_r=' Robustness {:.3f}'.format(top1)
+        return msg_a,msg_r
 
     ts=time.time()
     for epoch in range(args.start_epoch, args.epochs):
@@ -302,8 +309,9 @@ def validate(args, val_loader, model, attack=None):
         batch_time.update(time.time() - end)
         end = time.time()
 
-    if not attack: print(' Accuracy {top1.avg:.3f}'.format(top1=top1))
-    else: print(' Robustness {top1.avg:.3f}'.format(top1=top1))
+    if not attack: msg=' Accuracy {top1.avg:.3f}'.format(top1=top1)
+    else: msg=' Robustness {top1.avg:.3f}'.format(top1=top1)
+    print(msg)
     return top1.avg
 
 def save_checkpoint(state, filename='checkpoint.pth.tar'): torch.save(state, filename)
@@ -368,10 +376,14 @@ def model_helper(args):
 
 
 def AR_test(atks,losses,dataset,backbones):
-    print('\n','*'*50,'\nAdversarial robustness test start.\n')
+    msg='\n'+'*'*50+'\nAdversarial robustness test start.\n'
+    print(msg)
+    logger.info(msg)
     args.evaluate=True
     for d in dataset:
-        print('===================== Dataset: '+d+' =====================')
+        msg='===================== Dataset: '+d+' ====================='
+        print(msg)
+        logger.info(msg)
         args.dataset=d
         if d=='mnist': args.epochs=10;eps=0.3;backbone=['conv']
         if d=='cifar': args.epochs=200;eps=8/255;backbone=backbones
@@ -379,35 +391,52 @@ def AR_test(atks,losses,dataset,backbones):
         for m in backbone:
             if d!='mnist' and m=='conv': continue
             args.model=m
-            print('\n+----------------------- Backbone: '+m,' --------------------+')
+            msg='\n+----------------------- Backbone: '+m+' --------------------+'
+            print(msg)
+            logger.info(msg)
             for args.atk in atks:
-                print('\n~~~~~~~~~~~~~~~~~~~~~~ Attack: '+args.atk.upper()+' ~~~~~~~~~~~~~~~~~~~~~~')
+                msg='\n~~~~~~~~~~~~~~~~~~~~~~ Attack: '+args.atk.upper()+' ~~~~~~~~~~~~~~~~~~~~~~'
+                print(msg)
+                logger.info(msg)
                 for i in losses:
-                    print('______________________ Loss: '+i+' ____________________')
+                    msg='______________________ Loss: '+i+' ____________________'
+                    print(msg)
+                    logger.info(msg)
                     args.loss=i
                     model=model_helper(args)
                     atk=atk_helper(args,model,eps)
-                    main(args,model,atk)
+                    msg_a,msg_r=main(args,model,atk)
+                    logger.info(msg_a)
+                    logger.info(msg_r)
     
 def OOD_test(ood_dataset,losses,dataset,backbones):
-    print('\n','*'*50,'\nOOD robustness test start.\n')
+    msg='\n'+'*'*50+'\nOOD robustness test start.\n'
+    print(msg)
+    logger.info(msg)
     for m in backbones:
         if m=='conv': continue
         args.model=m
-        print('+----------------------- Backbone: '+m,' --------------------+\n')
+        msg='+----------------------- Backbone: '+m+' --------------------+\n'
+        print(msg)
+        logger.info(msg)
         for indis in dataset:
             if indis=='mnist': continue
-            print('===================== Indis: '+indis+' =====================\n')
+            msg='===================== Indis: '+indis+' =====================\n'
+            print(msg)
+            logger.info(msg)
             args.dataset=indis
             for dataname in ood_dataset:
                 for i in losses:
-                    print('______________________ Loss: '+i+' ____________________')
+                    msg='______________________ Loss: '+i+' ____________________'
+                    print(msg)
+                    logger.info(msg)
                     args.loss=i
                     model=model_helper(args)
                     model=model_loader(args,model,eval=True) # it will load model based on args
                     expname=args.group+'_'+indis+'_'+args.model+'-D'+str(args.D)+'_'+args.loss+'_'+args.name # not useful actually
                     model.eval()
-                    testood(expname,model,dataname,args.workers,indis)
+                    msg=testood(expname,model,dataname,args.workers,indis)
+                    logger.info(msg)
                     
 def trainer(args,losses,dataset,backbones):
     print('\n','*'*50,'\nTraining start.\n')
@@ -441,7 +470,7 @@ if __name__ == '__main__':
     parser.add_argument('--group', type=str,  default='standard', help='experiment group')
     parser.add_argument('--loss', type=str,  default='', help='loss')
     parser.add_argument('--model', type=str,  default='resnet', help='distance metric')
-    parser.add_argument('--atk', type=str,  default='', help='atk')
+    parser.add_argument('--atk', type=str,  default=None, help='atk')
     parser.add_argument('--C', type=int,  default=1, help='number of prototypes')
     parser.add_argument('--D', type=int,  default=64, help='d_model')
     parser.add_argument('--lossdist', type=str,  default='L2', help='loss distance metric')
@@ -450,7 +479,7 @@ if __name__ == '__main__':
     parser.add_argument('--adv_norm', type=bool,  default=True, help='seperate adv norm term')
     parser.add_argument('--ploption', type=list,  default=[0.1,0.1], help='[a,b]')
     parser.add_argument('--AT', type=bool,  default=False, help='use adversarial training')
-    parser.add_argument('--max_best', type=int,  default=5, help='max_best')
+    parser.add_argument('--max_best', type=int,  default=3, help='max_best')
     parser.add_argument('--best', type=int,  default=1, help='load which best')
     parser.add_argument('--dataset', type=str,  default='mnist', help='dataset')
     parser.add_argument('-j', '--workers', default=0, type=int, metavar='N',
@@ -469,7 +498,7 @@ if __name__ == '__main__':
                         metavar='W', help='weight decay (default: 1e-4)')
     parser.add_argument('--print-freq', '-p', type=int, default=50,
                         metavar='N', help='print frequency (default: 50)')
-    parser.add_argument('--resume', type=bool,  default=False,
+    parser.add_argument('--resume', type=bool,  default=True,
                         metavar='PATH', help='path to latest checkpoint (default: none)')
     parser.add_argument('-e', '--evaluate', dest='evaluate', type=bool, default=False,
                         help='evaluate model on validation set')
@@ -506,34 +535,41 @@ if __name__ == '__main__':
     args.ploption=[0.1,0.2] # a,b
 
     # backbones=['resnet','vgg','conv','mobilenet']
-    backbones=['mobilenet']
+    backbones=['vgg']
     # losses=['PL','vanilla','DCE','TLA','NLA']
     losses=['PL']
     # dataset=['mnist','cifar','svhn']
-    dataset=['mnist']
+    dataset=['cifar']
+    
+    logname='test'
 
 
     args.resume=True
     args.evaluate=False
-    args.max_best=3 # save how many bests
-    args.best=1 # load which best, smaller newer
     
+    if not os.path.exists('./logs'): os.makedirs('./logs')
+    logging.basicConfig(level=logging.INFO,#控制台打印的日志级别
+                        filename='logs/'+logname+'.log',
+                        filemode='w',#a w
+                        format='%(message)s'
+                        )
+    logger = logging.getLogger()
+
+
     """ Train """
-    args.AT=False # whether do AT
-    args.atk=None
-    trainer(args,losses,dataset,backbones)
+    # trainer(args,losses,dataset,backbones)
 
 
     """ Adversarial Robustness Test """
-    atks=['fgsm','pgd','bim','pgdrs','pgdl2']
-    # atks=['fgsm']
-    AR_test(atks,losses,dataset,backbones)
+    # atks=['fgsm','pgd','bim','pgdrs','pgdl2']
+    # AR_test(atks,losses,dataset,backbones)
     
 
     """ OOD Test on a Trained model (w/wo ODIN) """
     # ood_dataset=["Imagenet","Imagenet_resize","LSUN","LSUN_resize",
     #                 "iSUN","Gaussian","Uniform"]
-    # OOD_test(ood_dataset,losses,dataset,backbones)
+    ood_dataset=["Uniform"]
+    OOD_test(ood_dataset,losses,dataset,backbones)
 
 
 
