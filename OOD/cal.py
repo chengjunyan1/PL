@@ -26,22 +26,8 @@ start = time.time()
 
 transform = transforms.Compose([
     transforms.ToTensor(),
-    transforms.Normalize((125.3/255, 123.0/255, 113.9/255), (63.0/255, 62.1/255.0, 66.7/255.0)),
+    # transforms.Normalize((125.3/255, 123.0/255, 113.9/255), (63.0/255, 62.1/255.0, 66.7/255.0)),
 ])
-
-
-
-
-# loading neural network
-
-# Name of neural networks
-# Densenet trained on CIFAR-10:         densenet10
-# Densenet trained on CIFAR-100:        densenet100
-# Densenet trained on WideResNet-10:    wideresnet10
-# Densenet trained on WideResNet-100:   wideresnet100
-#nnName = "densenet10"
-
-#imName = "Imagenet"
 
 
 
@@ -49,32 +35,36 @@ criterion = nn.CrossEntropyLoss()
 
 
 
-def testood(name, net1, dataName, num_workers, indis="CIFAR-10", CUDA_DEVICE=0, epsilon=0.0014, temperature=1000):
+def testood(name, net1, dataName, num_workers, indis, CUDA_DEVICE=0, epsilon=0.0014, temperature=1000):
     
     assert dataName in ["Imagenet","Imagenet_resize","LSUN","LSUN_resize",
-                    "iSUN","Gaussian","Uniform"]
+                    "iSUN","Gaussian","Uniform","cifar","svhn"]
     net1.cuda(CUDA_DEVICE)
     
     if dataName != "Uniform" and dataName != "Gaussian":
-        testsetout = torchvision.datasets.ImageFolder("./data/{}".format(dataName), transform=transform)
-        testloaderOut = torch.utils.data.DataLoader(testsetout, batch_size=1,
-                                         shuffle=False, num_workers=num_workers)
+        if dataName=="cifar":
+            testset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform)
+            testloaderOut = torch.utils.data.DataLoader(testset, batch_size=1,
+                shuffle=False, num_workers=num_workers, pin_memory=True)
+        elif dataName=='svhn':
+            testloaderOut = torch.utils.data.DataLoader(torchvision.datasets.SVHN(root='./data', split='test', 
+                transform=transforms.Compose([transforms.ToTensor(),]), download=True),
+                batch_size=1, shuffle=False, num_workers=num_workers, pin_memory=True)
+        else:
+            testsetout = torchvision.datasets.ImageFolder("./data/{}".format(dataName), transform=transform)
+            testloaderOut = torch.utils.data.DataLoader(testsetout, batch_size=1,
+                                            shuffle=False, num_workers=num_workers)
 
-    # if indis=='MNIST':
-    #     testloaderIn = torch.utils.data.DataLoader(
-    #         torchvision.datasets.MNIST(root='./data', train=False, download=True,
-    #             transform=transforms.Compose([transforms.ToTensor(),])),
-    #         batch_size=1, shuffle=False,num_workers=num_workers, pin_memory=True)
+    assert indis in ['cifar','svhn']
 
-    if indis=="CIFAR-10": 
+    if indis=="cifar": 
         testset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform)
         testloaderIn = torch.utils.data.DataLoader(testset, batch_size=1,
-                                         shuffle=False, num_workers=num_workers)
-    if indis=="CIFAR-100":
-        testset = torchvision.datasets.CIFAR100(root='./data', train=False, download=True, transform=transform)
-        testloaderIn = torch.utils.data.DataLoader(testset, batch_size=1,
-                                         shuffle=False, num_workers=num_workers)
-    
+            shuffle=False, num_workers=num_workers, pin_memory=True)
+    if indis=='svhn':
+        testloaderIn = torch.utils.data.DataLoader(torchvision.datasets.SVHN(root='./data', split='test', 
+            transform=transforms.Compose([transforms.ToTensor(),]), download=True),
+            batch_size=1, shuffle=False, num_workers=num_workers, pin_memory=True)
     
     path='./OOD/scores/'+name+'/'+dataName
     if not os.path.exists(path): os.makedirs(path)
@@ -82,7 +72,7 @@ def testood(name, net1, dataName, num_workers, indis="CIFAR-10", CUDA_DEVICE=0, 
     if dataName == "Gaussian": d.testGaussian(path, net1, criterion, CUDA_DEVICE, testloaderIn, testloaderIn, dataName, epsilon, temperature)
     elif dataName == "Uniform": d.testUni(path, net1, criterion, CUDA_DEVICE, testloaderIn, testloaderIn, dataName, epsilon, temperature)
     else: d.testData(path, net1, criterion, CUDA_DEVICE, testloaderIn, testloaderOut, dataName, epsilon, temperature) 
-    m.metric(path, indis, dataName)
+    return m.metric(path, indis, dataName)
 
 
 

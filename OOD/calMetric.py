@@ -26,12 +26,12 @@ def tpr95(path,name):
     T = 1
     cifar = np.loadtxt(path+'/confidence_Base_In.txt', delimiter=',')
     other = np.loadtxt(path+'/confidence_Base_Out.txt', delimiter=',')
-    if name == "CIFAR-10": 
-        start = 0.1
-        end = 1 
-    if name == "CIFAR-100": 
-        start = 0.01
-        end = 1    
+    # if name == "CIFAR-10": 
+    start = 0.1
+    end = 1 
+    # if name == "CIFAR-100": 
+    #     start = 0.01
+    #     end = 1    
     gap = (end- start)/100000
     #f = open("./{}/{}/T_{}.txt".format(nnName, dataName, T), 'w')
     Y1 = other[:, 2]
@@ -46,31 +46,34 @@ def tpr95(path,name):
             total += 1
     fprBase = fpr/total if total>0 else fpr
 
-    # calculate our algorithm
-    T = 1000
-    cifar = np.loadtxt(path+'/confidence_Our_In.txt', delimiter=',')
-    other = np.loadtxt(path+'/confidence_Our_Out.txt', delimiter=',')
-    if name == "CIFAR-10": 
-        start = 0.1
-        end = 0.12 
-    if name == "CIFAR-100": 
-        start = 0.01
-        end = 0.0104    
-    gap = (end- start)/100000
-    #f = open("./{}/{}/T_{}.txt".format(nnName, dataName, T), 'w')
-    Y1 = other[:, 2]
-    X1 = cifar[:, 2]
-    total = 0.0
-    fpr = 0.0
-    for delta in np.arange(start, end, gap):
-        tpr = np.sum(np.sum(X1 >= delta)) / np.float(len(X1))
-        error2 = np.sum(np.sum(Y1 > delta)) / np.float(len(Y1))
-        if tpr <= 0.9505 and tpr >= 0.9495:
-            fpr += error2
-            total += 1
-    fprNew = fpr/total if total>0 else fpr
+    # # calculate our algorithm
+    # T = 1000
+    # cifar = np.loadtxt(path+'/confidence_Our_In.txt', delimiter=',')
+    # other = np.loadtxt(path+'/confidence_Our_Out.txt', delimiter=',')
+    # # if name == "CIFAR-10": 
+    # start = 0.1
+    # end = 0.12 
+    # # if name == "CIFAR-100": 
+    # #     start = 0.01
+    # #     end = 0.0104    
+    # gap = (end- start)/100000
+    # #f = open("./{}/{}/T_{}.txt".format(nnName, dataName, T), 'w')
+    # Y1 = other[:, 2]
+    # X1 = cifar[:, 2]
+    # total = 0.0
+    # fpr = 0.0
+    # for delta in np.arange(start, end, gap):
+    #     tpr = np.sum(np.sum(X1 >= delta)) / np.float(len(X1))
+    #     error2 = np.sum(np.sum(Y1 > delta)) / np.float(len(Y1))
+    #     if tpr <= 0.9505 and tpr >= 0.9495:
+    #         fpr += error2
+    #         total += 1
+    # fprNew = fpr/total if total>0 else fpr
             
-    return fprBase, fprNew
+    # return fprBase, fprNew
+    return fprBase,None
+
+
 
 def auroc(path,name):
     #calculate the AUROC
@@ -78,12 +81,12 @@ def auroc(path,name):
     T = 1
     cifar = np.loadtxt(path+'/confidence_Base_In.txt', delimiter=',')
     other = np.loadtxt(path+'/confidence_Base_Out.txt', delimiter=',')
-    if name == "CIFAR-10": 
-        start = 0.1
-        end = 1 
-    if name == "CIFAR-100": 
-        start = 0.01
-        end = 1    
+    # if name == "CIFAR-10": 
+    start = 0.1
+    end = 1 
+    # if name == "CIFAR-100": 
+    #     start = 0.01
+    #     end = 1    
     gap = (end- start)/100000
     #f = open("./{}/{}/T_{}.txt".format(nnName, dataName, T), 'w')
     Y1 = other[:, 2]
@@ -96,29 +99,34 @@ def auroc(path,name):
         aurocBase += (-fpr+fprTemp)*tpr
         fprTemp = fpr
     aurocBase += fpr * tpr
-    # calculate our algorithm
-    T = 1000
-    cifar = np.loadtxt(path+'/confidence_Base_In.txt', delimiter=',')
-    other = np.loadtxt(path+'/confidence_Base_Out.txt', delimiter=',')
-    if name == "CIFAR-10": 
-        start = 0.1
-        end = 0.12 
-    if name == "CIFAR-100": 
-        start = 0.01
-        end = 0.0104    
-    gap = (end- start)/100000
-    #f = open("./{}/{}/T_{}.txt".format(nnName, dataName, T), 'w')
-    Y1 = other[:, 2]
-    X1 = cifar[:, 2]
-    aurocNew = 0.0
-    fprTemp = 1.0
-    for delta in np.arange(start, end, gap):
-        tpr = np.sum(np.sum(X1 >= delta)) / np.float(len(X1))
-        fpr = np.sum(np.sum(Y1 >= delta)) / np.float(len(Y1))
-        aurocNew += (-fpr+fprTemp)*tpr
-        fprTemp = fpr
-    aurocNew += fpr * tpr
-    return aurocBase, aurocNew
+
+
+    # # calculate our algorithm
+    # T = 1000
+    # cifar = np.loadtxt(path+'/confidence_Base_In.txt', delimiter=',')
+    # other = np.loadtxt(path+'/confidence_Base_Out.txt', delimiter=',')
+    # # if name == "CIFAR-10": 
+    # start = 0.1
+    # end = 0.12 
+    # # if name == "CIFAR-100": 
+    # #     start = 0.01
+    # #     end = 0.0104    
+    # gap = (end- start)/100000
+    # #f = open("./{}/{}/T_{}.txt".format(nnName, dataName, T), 'w')
+    # Y1 = other[:, 2]
+    # X1 = cifar[:, 2]
+    # aurocNew = 0.0
+    # fprTemp = 1.0
+    # for delta in np.arange(start, end, gap):
+    #     tpr = np.sum(np.sum(X1 >= delta)) / np.float(len(X1))
+    #     fpr = np.sum(np.sum(Y1 >= delta)) / np.float(len(Y1))
+    #     aurocNew += (-fpr+fprTemp)*tpr
+    #     fprTemp = fpr
+    # aurocNew += fpr * tpr
+    # return aurocBase, aurocNew
+    return aurocBase,None
+
+
 
 def auprIn(path,name):
     #calculate the AUPR
@@ -126,12 +134,12 @@ def auprIn(path,name):
     T = 1
     cifar = np.loadtxt(path+'/confidence_Base_In.txt', delimiter=',')
     other = np.loadtxt(path+'/confidence_Base_Out.txt', delimiter=',')
-    if name == "CIFAR-10": 
-        start = 0.1
-        end = 1 
-    if name == "CIFAR-100": 
-        start = 0.01
-        end = 1    
+    # if name == "CIFAR-10": 
+    start = 0.1
+    end = 1 
+    # if name == "CIFAR-100": 
+    #     start = 0.01
+    #     end = 1    
     gap = (end- start)/100000
     precisionVec = []
     recallVec = []
@@ -153,34 +161,37 @@ def auprIn(path,name):
     auprBase += recall * precision
     #print(recall, precision)
 
-    # calculate our algorithm
-    T = 1000
-    cifar = np.loadtxt(path+'/confidence_Base_In.txt', delimiter=',')
-    other = np.loadtxt(path+'/confidence_Base_Out.txt', delimiter=',')
-    if name == "CIFAR-10": 
-        start = 0.1
-        end = 0.12 
-    if name == "CIFAR-100": 
-        start = 0.01
-        end = 0.0104    
-    gap = (end- start)/100000
-    #f = open("./{}/{}/T_{}.txt".format(nnName, dataName, T), 'w')
-    Y1 = other[:, 2]
-    X1 = cifar[:, 2]
-    auprNew = 0.0
-    recallTemp = 1.0
-    for delta in np.arange(start, end, gap):
-        tp = np.sum(np.sum(X1 >= delta)) / np.float(len(X1))
-        fp = np.sum(np.sum(Y1 >= delta)) / np.float(len(Y1))
-        if tp + fp == 0: continue
-        precision = tp / (tp + fp)
-        recall = tp
-        #precisionVec.append(precision)
-        #recallVec.append(recall)
-        auprNew += (recallTemp-recall)*precision
-        recallTemp = recall
-    auprNew += recall * precision
-    return auprBase, auprNew
+    # # calculate our algorithm
+    # T = 1000
+    # cifar = np.loadtxt(path+'/confidence_Base_In.txt', delimiter=',')
+    # other = np.loadtxt(path+'/confidence_Base_Out.txt', delimiter=',')
+    # # if name == "CIFAR-10": 
+    # start = 0.1
+    # end = 0.12 
+    # # if name == "CIFAR-100": 
+    # #     start = 0.01
+    # #     end = 0.0104    
+    # gap = (end- start)/100000
+    # #f = open("./{}/{}/T_{}.txt".format(nnName, dataName, T), 'w')
+    # Y1 = other[:, 2]
+    # X1 = cifar[:, 2]
+    # auprNew = 0.0
+    # recallTemp = 1.0
+    # for delta in np.arange(start, end, gap):
+    #     tp = np.sum(np.sum(X1 >= delta)) / np.float(len(X1))
+    #     fp = np.sum(np.sum(Y1 >= delta)) / np.float(len(Y1))
+    #     if tp + fp == 0: continue
+    #     precision = tp / (tp + fp)
+    #     recall = tp
+    #     #precisionVec.append(precision)
+    #     #recallVec.append(recall)
+    #     auprNew += (recallTemp-recall)*precision
+    #     recallTemp = recall
+    # auprNew += recall * precision
+    # return auprBase, auprNew
+    return auprBase,None
+
+
 
 def auprOut(path,name):
     #calculate the AUPR
@@ -188,12 +199,12 @@ def auprOut(path,name):
     T = 1
     cifar = np.loadtxt(path+'/confidence_Base_In.txt', delimiter=',')
     other = np.loadtxt(path+'/confidence_Base_Out.txt', delimiter=',')
-    if name == "CIFAR-10": 
-        start = 0.1
-        end = 1 
-    if name == "CIFAR-100": 
-        start = 0.01
-        end = 1    
+    # if name == "CIFAR-10": 
+    start = 0.1
+    end = 1 
+    # if name == "CIFAR-100": 
+    #     start = 0.01
+    #     end = 1    
     gap = (end- start)/100000
     Y1 = other[:, 2]
     X1 = cifar[:, 2]
@@ -210,32 +221,33 @@ def auprOut(path,name):
     auprBase += recall * precision
         
     
-    # calculate our algorithm
-    T = 1000
-    cifar = np.loadtxt(path+'/confidence_Base_In.txt', delimiter=',')
-    other = np.loadtxt(path+'/confidence_Base_Out.txt', delimiter=',')
-    if name == "CIFAR-10": 
-        start = 0.1
-        end = 0.12 
-    if name == "CIFAR-100": 
-        start = 0.01
-        end = 0.0104    
-    gap = (end- start)/100000
-    #f = open("./{}/{}/T_{}.txt".format(nnName, dataName, T), 'w')
-    Y1 = other[:, 2]
-    X1 = cifar[:, 2]
-    auprNew = 0.0
-    recallTemp = 1.0
-    for delta in np.arange(end, start, -gap):
-        fp = np.sum(np.sum(X1 < delta)) / np.float(len(X1))
-        tp = np.sum(np.sum(Y1 < delta)) / np.float(len(Y1))
-        if tp + fp == 0: break
-        precision = tp / (tp + fp)
-        recall = tp
-        auprNew += (recallTemp-recall)*precision
-        recallTemp = recall
-    auprNew += recall * precision
-    return auprBase, auprNew
+    # # calculate our algorithm
+    # T = 1000
+    # cifar = np.loadtxt(path+'/confidence_Base_In.txt', delimiter=',')
+    # other = np.loadtxt(path+'/confidence_Base_Out.txt', delimiter=',')
+    # # if name == "CIFAR-10": 
+    # start = 0.1
+    # end = 0.12 
+    # # if name == "CIFAR-100": 
+    # #     start = 0.01
+    # #     end = 0.0104    
+    # gap = (end- start)/100000
+    # #f = open("./{}/{}/T_{}.txt".format(nnName, dataName, T), 'w')
+    # Y1 = other[:, 2]
+    # X1 = cifar[:, 2]
+    # auprNew = 0.0
+    # recallTemp = 1.0
+    # for delta in np.arange(end, start, -gap):
+    #     fp = np.sum(np.sum(X1 < delta)) / np.float(len(X1))
+    #     tp = np.sum(np.sum(Y1 < delta)) / np.float(len(Y1))
+    #     if tp + fp == 0: break
+    #     precision = tp / (tp + fp)
+    #     recall = tp
+    #     auprNew += (recallTemp-recall)*precision
+    #     recallTemp = recall
+    # auprNew += recall * precision
+    # return auprBase, auprNew
+    return auprBase,None
 
 
 
@@ -245,12 +257,12 @@ def detection(path,name):
     T = 1
     cifar = np.loadtxt(path+'/confidence_Base_In.txt', delimiter=',')
     other = np.loadtxt(path+'/confidence_Base_Out.txt', delimiter=',')
-    if name == "CIFAR-10": 
-        start = 0.1
-        end = 1 
-    if name == "CIFAR-100": 
-        start = 0.01
-        end = 1    
+    # if name == "CIFAR-10": 
+    start = 0.1
+    end = 1 
+    # if name == "CIFAR-100": 
+    #     start = 0.01
+    #     end = 1    
     gap = (end- start)/100000
     #f = open("./{}/{}/T_{}.txt".format(nnName, dataName, T), 'w')
     Y1 = other[:, 2]
@@ -261,33 +273,34 @@ def detection(path,name):
         error2 = np.sum(np.sum(Y1 > delta)) / np.float(len(Y1))
         errorBase = np.minimum(errorBase, (tpr+error2)/2.0)
 
-    # calculate our algorithm
-    T = 1000
-    cifar = np.loadtxt(path+'/confidence_Base_In.txt', delimiter=',')
-    other = np.loadtxt(path+'/confidence_Base_Out.txt', delimiter=',')
-    if name == "CIFAR-10": 
-        start = 0.1
-        end = 0.12 
-    if name == "CIFAR-100": 
-        start = 0.01
-        end = 0.0104    
-    gap = (end- start)/100000
-    #f = open("./{}/{}/T_{}.txt".format(nnName, dataName, T), 'w')
-    Y1 = other[:, 2]
-    X1 = cifar[:, 2]
-    errorNew = 1.0
-    for delta in np.arange(start, end, gap):
-        tpr = np.sum(np.sum(X1 < delta)) / np.float(len(X1))
-        error2 = np.sum(np.sum(Y1 > delta)) / np.float(len(Y1))
-        errorNew = np.minimum(errorNew, (tpr+error2)/2.0)
+    # # calculate our algorithm
+    # T = 1000
+    # cifar = np.loadtxt(path+'/confidence_Base_In.txt', delimiter=',')
+    # other = np.loadtxt(path+'/confidence_Base_Out.txt', delimiter=',')
+    # # if name == "CIFAR-10": 
+    # start = 0.1
+    # end = 0.12 
+    # # if name == "CIFAR-100": 
+    # #     start = 0.01
+    # #     end = 0.0104    
+    # gap = (end- start)/100000
+    # #f = open("./{}/{}/T_{}.txt".format(nnName, dataName, T), 'w')
+    # Y1 = other[:, 2]
+    # X1 = cifar[:, 2]
+    # errorNew = 1.0
+    # for delta in np.arange(start, end, gap):
+    #     tpr = np.sum(np.sum(X1 < delta)) / np.float(len(X1))
+    #     error2 = np.sum(np.sum(Y1 > delta)) / np.float(len(Y1))
+    #     errorNew = np.minimum(errorNew, (tpr+error2)/2.0)
             
-    return errorBase, errorNew
+    # return errorBase, errorNew
+    return errorBase,None
 
 
 
 
 def metric(path, indis, data):
-    assert indis in ["CIFAR-10","CIFAR-100"]
+    # assert indis in ["CIFAR-10","CIFAR-100"]
     
     if data == "Imagenet": dataName = "Tiny-ImageNet (crop)"
     if data == "Imagenet_resize": dataName = "Tiny-ImageNet (resize)"
@@ -296,6 +309,7 @@ def metric(path, indis, data):
     if data == "iSUN": dataName = "iSUN"
     if data == "Gaussian": dataName = "Gaussian noise"
     if data == "Uniform": dataName = "Uniform Noise"
+    else: dataName=data
     fprBase, fprNew = tpr95(path,indis)
     errorBase, errorNew = detection(path,indis)
     aurocBase, aurocNew = auroc(path,indis)
@@ -304,13 +318,27 @@ def metric(path, indis, data):
     print("{:31}{:>22}".format("In-distribution dataset:", indis))
     print("{:31}{:>22}".format("Out-of-distribution dataset:", dataName))
     print("")
-    print("{:>34}{:>19}".format("Baseline", "Our Method"))
-    print("{:20}{:13.1f}%{:>18.1f}% ".format("FPR at TPR 95%:",fprBase*100, fprNew*100))
-    print("{:20}{:13.1f}%{:>18.1f}%".format("Detection error:",errorBase*100, errorNew*100))
-    print("{:20}{:13.1f}%{:>18.1f}%".format("AUROC:",aurocBase*100, aurocNew*100))
-    print("{:20}{:13.1f}%{:>18.1f}%".format("AUPR In:",auprinBase*100, auprinNew*100))
-    print("{:20}{:13.1f}%{:>18.1f}%".format("AUPR Out:",auproutBase*100, auproutNew*100))
+    # print("{:>34}{:>19}".format("Baseline", "Our Method"))
+    # print("{:20}{:13.1f}%{:>18.1f}% ".format("FPR at TPR 95%:",fprBase*100, fprNew*100))
+    # print("{:20}{:13.1f}%{:>18.1f}%".format("Detection error:",errorBase*100, errorNew*100))
+    # print("{:20}{:13.1f}%{:>18.1f}%".format("AUROC:",aurocBase*100, aurocNew*100))
+    # print("{:20}{:13.1f}%{:>18.1f}%".format("AUPR In:",auprinBase*100, auprinNew*100))
+    # print("{:20}{:13.1f}%{:>18.1f}%".format("AUPR Out:",auproutBase*100, auproutNew*100))
 
+    print("{:20}{:13.1f}% ".format("FPR at TPR 95%:",fprBase*100))
+    print("{:20}{:13.1f}%".format("Detection error:",errorBase*100))
+    print("{:20}{:13.1f}%".format("AUROC:",aurocBase*100))
+    print("{:20}{:13.1f}%".format("AUPR In:",auprinBase*100))
+    print("{:20}{:13.1f}%".format("AUPR Out:",auproutBase*100))
+
+    msg="{:31}{:>22}".format("In-distribution dataset:", indis)+'\n'
+    msg+="{:31}{:>22}".format("Out-of-distribution dataset:", dataName)+'\n\n'
+    msg+="{:20}{:13.1f}% ".format("FPR at TPR 95%:",fprBase*100)+'\n'
+    msg+="{:20}{:13.1f}%".format("Detection error:",errorBase*100)+'\n'
+    msg+="{:20}{:13.1f}%".format("AUROC:",aurocBase*100)+'\n'
+    msg+="{:20}{:13.1f}%".format("AUPR In:",auprinBase*100)+'\n'
+    msg+="{:20}{:13.1f}%".format("AUPR Out:",auproutBase*100)+'\n'
+    return msg
 
 
 

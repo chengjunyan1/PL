@@ -22,6 +22,12 @@ import torchattacks
 from OOD.cal import testood
 
 
+class mylogger:
+    def __init__(self,path,mode='w'):
+        self.path=path
+        with open(path,mode) as f: f.write('')
+    def info(self,msg):
+        with open(self.path,'a') as f: f.write(msg) 
 
 def name_helper(args):
     if args.loss=='PL':
@@ -433,7 +439,7 @@ def OOD_test(ood_dataset,losses,dataset,backbones):
                     args.loss=i
                     model=model_helper(args)
                     model=model_loader(args,model,eval=True) # it will load model based on args
-                    expname=args.group+'_'+indis+'_'+args.model+'-D'+str(args.D)+'_'+args.loss+'_'+args.name # not useful actually
+                    expname=name_helper(args)
                     model.eval()
                     msg=testood(expname,model,dataname,args.workers,indis)
                     logger.info(msg)
@@ -482,7 +488,7 @@ if __name__ == '__main__':
     parser.add_argument('--max_best', type=int,  default=3, help='max_best')
     parser.add_argument('--best', type=int,  default=1, help='load which best')
     parser.add_argument('--dataset', type=str,  default='mnist', help='dataset')
-    parser.add_argument('-j', '--workers', default=0, type=int, metavar='N',
+    parser.add_argument('-j', '--workers', default=5, type=int, metavar='N',
                         help='number of data loading workers (default: 4)')
     parser.add_argument('--epochs', default=10, type=int, metavar='N',
                         help='number of total epochs to run')
@@ -535,11 +541,11 @@ if __name__ == '__main__':
     args.ploption=[0.1,0.2] # a,b
 
     # backbones=['resnet','vgg','conv','mobilenet']
-    backbones=['vgg']
+    backbones=['resnet']
     # losses=['PL','vanilla','DCE','TLA','NLA']
     losses=['PL']
     # dataset=['mnist','cifar','svhn']
-    dataset=['cifar']
+    dataset=['cifar','svhn']
     
     logname='test'
 
@@ -547,28 +553,23 @@ if __name__ == '__main__':
     args.resume=True
     args.evaluate=False
     
-    if not os.path.exists('./logs'): os.makedirs('./logs')
-    logging.basicConfig(level=logging.INFO,#控制台打印的日志级别
-                        filename='logs/'+logname+'.log',
-                        filemode='w',#a w
-                        format='%(message)s'
-                        )
-    logger = logging.getLogger()
+    logdir='../nips/PL/logs/'
+    if not os.path.exists(logdir): os.makedirs(logdir)
+    logger=mylogger(logdir+logname+'.log','w')
 
 
     """ Train """
-    # trainer(args,losses,dataset,backbones)
+    trainer(args,losses,dataset,backbones)
 
 
     """ Adversarial Robustness Test """
-    # atks=['fgsm','pgd','bim','pgdrs','pgdl2']
-    # AR_test(atks,losses,dataset,backbones)
+    atks=['fgsm','pgd','bim','pgdrs','pgdl2']
+    AR_test(atks,losses,dataset,backbones)
     
 
     """ OOD Test on a Trained model (w/wo ODIN) """
-    # ood_dataset=["Imagenet","Imagenet_resize","LSUN","LSUN_resize",
-    #                 "iSUN","Gaussian","Uniform"]
-    ood_dataset=["Uniform"]
+    ood_dataset=["Imagenet","Imagenet_resize","LSUN","LSUN_resize",
+                    "iSUN","Gaussian","Uniform"]
     OOD_test(ood_dataset,losses,dataset,backbones)
 
 
