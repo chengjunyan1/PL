@@ -1,4 +1,4 @@
-# PL
+# Prototype Learning
 
 ## Paradigms
 
